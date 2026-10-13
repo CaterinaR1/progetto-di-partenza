@@ -2,7 +2,7 @@ spring:
   application:
     name: liparibank-spring-target
   datasource:
-    url: jdbc:mysql://localhost:3306/liparibank?useSSL=false&serverTimezone=UTC
+    url: jdbc:mysql://localhost:3306/liparibank?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: lipariuser
     password: liparipassword
     driver-class-name: com.mysql.cj.jdbc.Driver

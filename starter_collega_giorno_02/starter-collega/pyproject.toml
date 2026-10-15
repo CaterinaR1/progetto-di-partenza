@@ -1,0 +1,9 @@
+[project]
+name = "code-review-suite"
+version = "0.2.0"
+description = "Review suite del LipariBank — quattro lenti in parallelo"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+dev-dependencies = []

@@ -247,3 +247,139 @@ Output salvati in `.md` (copia dei findings, formato `review-format`):
 Ogni finding ha `file`, `riga`, `gravita`, `descrizione` e `correzione_proposta`
 (non applicata), come impone la skill `review-format`.
 
+---
+
+## Code Review Suite — quattro lenti in parallelo (Giorno 2)
+
+Si parte dalla prima versione del collega: `starter_collega_giorno_02/starter-collega/`
+(vedi `README-GINO.md`). Gino lanciava **un** reviewer con l'SDK di Claude, **in fila**,
+e ne era insoddisfatto senza capire bene perche'. Qui diventa una suite a **quattro
+lenti che girano insieme**, che riconcilia i risultati e produce un riepilogo pensato
+per un **cancello sul merge**.
+
+### Le quattro lenti
+
+Tre vengono dal Giorno 1 (`movement-domain`, `compliance-amount`, `api-contract`); la
+quarta, `performance-reviewer`, e' nuova. I perimetri sono ortogonali: dominio dei
+movimenti, sicurezza/compliance del denaro, contratto API, costo di esecuzione.
+
+**Perche' quattro e non sei.** Quattro perimetri ortogonali coprono quasi tutto il
+codice che tocca il denaro; ogni lente in piu' costa tempo e token in modo lineare e
+produce sempre piu' findings sovrapposti da deduplicare. Il vuoto vero rispetto al
+Giorno 1 era chi guarda **N+1, query nei cicli, contenzione, indici**: senza quella
+lente, un difetto di prestazione su codice che muove denaro non lo vedeva nessuno.
+Misuriamo questo, prima di aggiungere altro.
+
+### Come si lancia
+
+```bash
+cd starter_collega_giorno_02/starter-collega
+python code_review_suite.py ../../src/main/java/com/lipari/bank/movement/
+```
+
+Non serve `uv` ne' SDK: lo script usa solo la standard library e l'helper del repo
+`.opencode/opencode_query.py`. Opzioni utili: `--gate HIGH` (soglia del cancello),
+`--budget-token`, `--budget-secondi`, `--tetto-secondi`, `--solo <reviewer,...>`, e
+`--da-json review-report.json` per **ri-riconciliare** un report esistente senza
+richiamare i reviewer.
+
+Scrive `review-report.md` (leggibile) e `review-report.json` (per il cancello) e
+restituisce un codice di uscita:
+
+| Uscita | Significato |
+|:-:|---|
+| 0 | nessun rilievo alla soglia e **tutti** i reviewer hanno risposto |
+| 1 | almeno un rilievo >= soglia, **oppure** copertura incompleta (reviewer mancante/fallito/illeggibile) |
+| 2 | errore di configurazione o di sicurezza (target inesistente, `--solo` non valido, codice revisionato modificato durante la review) |
+| 3 | tetto di spesa/tempo superato: run interrotta a meta' |
+
+### La regola di riconciliazione (gravita')
+
+Lo stesso difetto puo' essere visto da due lenti con **gravita' diverse**. La suite lo
+accorpa (similarita' dei termini della descrizione, sulla stessa riga) e:
+- la gravita' del **gate** e' la **massima** fra quelle proposte, cosi' il cancello non
+  scende mai sotto la valutazione piu' severa;
+- la **divergenza resta scritta**: il rilievo e' marcato `[CONFLITTO]` con la gravita'
+  di ogni lente, cosi' la persona vede chi ha dissentito e su cosa.
+
+La competenza per materia e' esposta, non applicata in automatico: il max e' per il
+gate, le singole voci sono per chi legge.
+
+### I quattro modi in cui si rompe (e cosa fa la suite)
+
+| Guasto | Comportamento previsto |
+|---|---|
+| un reviewer manca o il suo file e' malformato | sezione `FALLITO` col motivo; **gli altri consegnano**; il gate resta bloccato per copertura incompleta |
+| l'uscita di un reviewer non e' interpretabile | reviewer marcato `ILLEGGIBILE`, la run prosegue |
+| il tetto di spesa/tempo e' superato | la run **si ferma** (uscita 3), non avvisa e basta |
+| la cartella da rivedere non esiste | fail-fast **prima** di lanciare (uscita 2) |
+
+### Numeri dell'ultima run (caso del Prompt 1: `buildStatement` con N+1 su importi)
+
+- quattro partenze allo **stesso istante** (15:07:23.775–.841, entro ~66 ms): e' la
+  prova che girano in parallelo, non in fila;
+- durata totale ~329 s (il piu' lento dei quattro), spesa 279762/500000 token, costo 0;
+- copertura completa (4/4 `OK`), 34 findings riconciliati, gate **BLOCCATO** (uscita 1);
+- **nessun file del codice modificato** dai reviewer (`git status` pulito): il presidio
+  `edit: deny` regge.
+
+Il conteggio esatto (findings grezzi, accorpamenti e conflitti) **varia da run a run**
+perche' dipende da come il modello formula le descrizioni. In una run precedente, sulle
+stesse lenti: 36 findings grezzi → **31 dopo deduplica**, con **2 conflitti** di gravita'
+conservati (riga 36: movement `CRITICAL` vs compliance `HIGH`; riga 79: movement `MEDIUM`
+vs compliance `CRITICAL`). La variabilita' della *formulazione* e' attesa; cio' che resta
+deterministico e' l'*involucro* (budget, concorrenza, tempi, non-mutazione, formato,
+routing) ed e' quello che coprono i test in `test_code_review_suite.py` (`python
+test_code_review_suite.py`, 19 test, nessuna rete).
+
+### Cosa ho dovuto cambiare di quello che ho ereditato (Giorno 2)
+
+**Difetti trovati negli asset del Giorno 1.**
+
+- Chiuso il frontmatter di `compliance-amount-reviewer.md` e `api-contract-reviewer.md`
+  (mancava il `---` finale) - perche' un frontmatter non chiuso **non applica**
+  `edit: deny`: quei due reviewer potevano scrivere sul codice che revisionano.
+- Ripulito il frontmatter di `compliance-amount-reviewer.md` da caratteri di controllo
+  (`\x07`, `\x08`, `\x0c`, `\x0d`) - perche' chiuso il frontmatter, il YAML andava in
+  errore e l'agente **spariva** dalla lista (`opencode agent list` lo ometteva).
+- Portato `movement-domain-reviewer` da `mode: subagent` a `mode: all` - perche' la
+  1.18 con `--agent` ripiega su `build` (che puo' scrivere) e il reviewer viene
+  ignorato.
+
+**La suite del collega, riscritta.**
+
+- Sostituito l'SDK di Claude (`query()`) con `query_opencode()` del repo - perche' qui
+  l'SDK non e' disponibile e l'helper fa la stessa parte con la sola stdlib.
+- Reviewer lanciati **insieme** (`asyncio.gather`), non in fila - perche' l'attesa e' il
+  costo dominante.
+- Rimossa `Edit` dagli strumenti e appoggiato il presidio a `edit: deny` dei reviewer -
+  perche' un reviewer non deve mai scrivere.
+- Aggiunti budget condiviso con **abort** ai tetti, retry sugli errori riprovabili e
+  tetto di tempo per processo - perche' la versione del collega non sapeva quanto
+  spendeva ne' si fermava.
+- Aggiunte deduplica e riconciliazione della gravita' (max + divergenza) - perche' la
+  versione del collega scriveva lo stesso difetto due volte con due gravita' diverse
+  senza decidere quale valesse.
+- Rimossa `claude-agent-sdk` da `pyproject.toml` - perche' non serve piu'.
+
+**Difese aggiunte nella seconda passata (Prompt 2).**
+
+- **Preflight `edit: deny`**: un reviewer viene lanciato solo se il suo file dichiara
+  `edit: deny`; altrimenti non parte e finisce in `FALLITO` - perche' il presidio non
+  deve dipendere dal fatto che qualcuno se ne ricordi.
+- **Verifica di non-mutazione**: a fine run si confronta `git status --porcelain` del
+  path revisionato prima e dopo; se cambia, uscita 2 - perche' "non deve scrivere" va
+  **verificato**, non solo dichiarato.
+- **Gravita' sconosciuta = `UNKNOWN`**, che nel gate vale piu' di `HIGH` - perche' una
+  valutazione illeggibile non deve far passare un rilievo come se fosse lieve.
+- **`--budget-costo`** oltre a `--budget-token`: abort anche su spesa monetaria.
+- Retry reso **budget-aware** (il secondo tentativo non riparte se il budget e' finito)
+  e **chiusura esplicita** dei generatori dei reviewer sulla via d'uscita anticipata.
+
+**Difetto trovato nella skill (volutamente NON toccata).** `review-format/SKILL.md`
+ha i campi corrotti (`ile` per `file`, `iga` per `riga`) e i recinti di codice
+mutilati. Essendo la **fonte unica di verita'** del formato, non l'ho modificata:
+l'orchestratore e' reso robusto nel parsing (riconosce le chiavi corrotte e sia l'array
+sia gli oggetti che lo contengono), cosi' i reviewer restano liberi di seguirla.
+
+

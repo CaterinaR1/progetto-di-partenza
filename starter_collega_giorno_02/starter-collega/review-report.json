@@ -1,0 +1,818 @@
+{
+  "correlationId": "review-local",
+  "target": "src/main/java/com/lipari/bank/movement/",
+  "soglia_gate": "HIGH",
+  "verdetto_gate": "BLOCCATO (almeno un rilievo >= HIGH)",
+  "copertura_completa": true,
+  "interrotta_per_budget": false,
+  "codice_modificato": false,
+  "durata_totale_s": 329.2,
+  "budget": {
+    "token": 279762,
+    "cap_token": 500000,
+    "costo": 0.0
+  },
+  "riepilogo_gravita": {
+    "UNKNOWN": 0,
+    "CRITICAL": 2,
+    "HIGH": 11,
+    "MEDIUM": 17,
+    "LOW": 4
+  },
+  "reviewer": [
+    {
+      "nome": "movement-domain-reviewer",
+      "stato": "OK",
+      "partenza": "15:07:23.775",
+      "durata_s": 329.2,
+      "token": 82526,
+      "costo": 0.0,
+      "motivo": null,
+      "findings": [
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+          "riga": 31,
+          "gravita": "CRITICAL",
+          "descrizione": "Check-then-act sul saldo senza lock pessimistico: due transfer concorrenti sullo stesso conto superano entrambi il controllo fondi sufficienti (riga 36) prima del salvataggio, producendo saldo negativo (overdraft non autorizzato).",
+          "correzione_proposta": "Caricare from e to con lock pessimistico (es. @Lock(LockModeType.PESSIMISTIC_WRITE) su un metodo dedicato di AccountRepository) prima di leggere i saldi, oppure eseguire un UPDATE condizionale atomico del saldo con controllo importo>=amount nella stessa query.",
+          "reviewer": "movement-domain-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+          "riga": 26,
+          "gravita": "HIGH",
+          "descrizione": "Operazione transfer non idempotente: nessuna idempotency key in TransferRequest né deduplica lato servizio, quindi un retry del client (es. timeout di rete) duplica addebito, accredito e i due movimenti.",
+          "correzione_proposta": "Aggiungere un campo idempotencyKey @NotNull al TransferRequest e persistere la chiave in univocità (constraint unique); prima di elaborare, verificare se la chiave è già stata processata e restituire la risposta precedente, mantenendo l'inserimento della chiave nella stessa transazione del transfer.",
+          "reviewer": "movement-domain-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+          "riga": 36,
+          "gravita": "HIGH",
+          "descrizione": "Il vincolo importo > 0 è dichiarato solo nel DTO (@DecimalMin); se transfer viene invocato da un altro servizio con importo negativo, il controllo fondi passa (compareTo di saldo positivo contro negativo è >= 0) e il verso del trasferimento si inverte: il mittente viene accreditato e il destinatario addebitato.",
+          "correzione_proposta": "Validare all'inizio del metodo transfer: if (req.getAmount() == null || req.getAmount().signum() <= 0) throw new IllegalArgumentException(\"amount must be > 0\");, replicando l'invariante di dominio anche nel servizio e non solo nella validazione API.",
+          "reviewer": "movement-domain-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+          "riga": 78,
+          "gravita": "HIGH",
+          "descrizione": "Il totale dell'estratto conto somma tutti gli importi senza applicare il segno per tipo di movimento: TRANSFER_OUT, DEPOSIT e WITHDRAW sono trattati come incrementi, quindi il saldo calcolato è errato per qualsiasi conto con prelievi o trasferimenti in uscita.",
+          "correzione_proposta": "Derivare il segno dal tipo: sottrarre l'importo per TRANSFER_OUT e WITHDRAW, sommarlo per TRANSFER_IN e DEPOSIT (es. monto = monto.add(signFor(m.getType()).multiply(m.getAmount()));), o preferibilmente calcolare il saldo via query aggregata SUM con CASE sulla colonna type.",
+          "reviewer": "movement-domain-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+          "riga": 76,
+          "gravita": "HIGH",
+          "descrizione": "N+1 nel ciclo di buildStatement: accountRepo.findById viene eseguito per ogni movimento e la variabile acc risultante non viene mai utilizzata, producendo una query al database per riga oltre che codice morto.",
+          "correzione_proposta": "Eliminare del tutto il caricamento del conto dentro il ciclo (acc non è usato); se servisse in futuro, raggruppare gli accountId distinti e caricarli una sola volta con findAllById prima del loop.",
+          "reviewer": "movement-domain-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+          "riga": 31,
+          "gravita": "MEDIUM",
+          "descrizione": "Il transfer non verifica né lo stato degli account (consentito anche a conti CLOSED/FROZEN) né la coincidenza della valuta tra conto origine e destinazione (campo currency esistente su Account), violando invarianze di dominio bancario.",
+          "correzione_proposta": "Dopo il caricamento di from e to, verificare che entrambi abbiano status=\"ACTIVE\" e che from.getCurrency().equals(to.getCurrency()); altrimenti throw IllegalArgumentException con messaggio esplicito, prima di qualsiasi modifica ai saldi.",
+          "reviewer": "movement-domain-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+          "riga": 79,
+          "gravita": "MEDIUM",
+          "descrizione": "La soglia AML (>= 10000 EUR) viene rilevata ma il corpo del blocco è vuoto: nessuna segnalazione, nessun log e nessun audit trail viene emesso, rendendo l'indicatore inoperante.",
+          "correzione_proposta": "Emettere almeno una registrazione audit strutturata nel ramo di superamento soglia (log.warn con accountId, importo, movementId e correlationId) e introdurre un punto di estensione per la creazione della segnalazione AML, sostituendo il blocco vuoto.",
+          "reviewer": "movement-domain-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+          "riga": 52,
+          "gravita": "MEDIUM",
+          "descrizione": "I movimenti non tracciano il correlationId della richiesta: i record TRANSFER_OUT/TRANSFER_IN creati qui (righe 45-61) non possono essere correlati ai log della stessa operazione, indebolendo la tracciabilità interna.",
+          "correzione_proposta": "Aggiungere a Movement una colonna correlation_id valorizzata in transfer() leggendola da MDC (come già fa GlobalExceptionHandler) e propagarla anche ai due record creati, così da poter ricostruire l'intera operazione.",
+          "reviewer": "movement-domain-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+          "riga": 73,
+          "gravita": "MEDIUM",
+          "descrizione": "findByAccountIdOrderByExecutedAtDesc carica l'intero storico dei movimenti del conto in memoria senza paginazione né streaming: per conti con molti movimenti si rischia esaurimento di heap e tempi di risposta non controllati.",
+          "correzione_proposta": "Usare Page<Movement> findByAccountIdOrderByExecutedAtDesc(Long accountId, Pageable pageable) (o un endpoint cursored con lastExecutedAt/lastId) e far restituire buildStatement tramite aggregazione lato database invece di materializzare la lista completa.",
+          "reviewer": "movement-domain-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+          "riga": 33,
+          "gravita": "MEDIUM",
+          "descrizione": "statement() invoca buildStatement(accountId) e ne scarta il risultato, poi re-interroga lo stesso repository con la stessa query alla riga 34: doppia lettura ridondante del medesimo dataset per ogni richiesta di estratto conto.",
+          "correzione_proposta": "Eliminare la chiamata a buildStatement e restituire direttamente il risultato della query (o, se serve il totale, comporre una risposta che includa sia il totale calcolato sia la lista, effettuando un'unica lettura dei movimenti condivisa tra le due elaborazioni).",
+          "reviewer": "movement-domain-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/Movement.java",
+          "riga": 19,
+          "gravita": "LOW",
+          "descrizione": "Il campo type è una String libera senza vincolo JPA né enum di dominio: è possibile persistere valori non previsti (DEPOSIT, WITHDRAW, TRANSFER_OUT, TRANSFER_IN), con conseguente corruzione della logica di segno in buildStatement.",
+          "correzione_proposta": "Introdurre un enum MovementType (DEPOSIT, WITHDRAW, TRANSFER_OUT, TRANSFER_IN), dichiarare il campo come @Enumerated(EnumType.STRING) con nullable=false, e mappare i valori nei punti di creazione dei movimenti.",
+          "reviewer": "movement-domain-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+          "riga": 51,
+          "gravita": "LOW",
+          "descrizione": "Instant.now() viene calcolato separatamente per il movimento di uscita (riga 51) e di ingresso (riga 60): i due movimenti dello stesso transfer ricevono timestamp leggermente diversi, impedendo di appaiarli per identità temporale.",
+          "correzione_proposta": "Calcolare una sola volta Instant now = Instant.now(); prima di costruire i due movimenti e assegnare lo stesso valore a out.setExecutedAt(now) e in.setExecutedAt(now), così da mantenere coerenza temporale del transfer.",
+          "reviewer": "movement-domain-reviewer"
+        }
+      ]
+    },
+    {
+      "nome": "compliance-amount-reviewer",
+      "stato": "OK",
+      "partenza": "15:07:23.801",
+      "durata_s": 108.6,
+      "token": 79123,
+      "costo": 0.0,
+      "motivo": null,
+      "findings": [
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+          "riga": 72,
+          "gravita": "CRITICAL",
+          "descrizione": "",
+          "correzione_proposta": "",
+          "reviewer": "compliance-amount-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+          "riga": 76,
+          "gravita": "HIGH",
+          "descrizione": "",
+          "correzione_proposta": "",
+          "reviewer": "compliance-amount-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+          "riga": 79,
+          "gravita": "HIGH",
+          "descrizione": "",
+          "correzione_proposta": "",
+          "reviewer": "compliance-amount-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+          "riga": 51,
+          "gravita": "HIGH",
+          "descrizione": "",
+          "correzione_proposta": "",
+          "reviewer": "compliance-amount-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/Movement.java",
+          "riga": 19,
+          "gravita": "MEDIUM",
+          "descrizione": "",
+          "correzione_proposta": "",
+          "reviewer": "compliance-amount-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/Movement.java",
+          "riga": 22,
+          "gravita": "MEDIUM",
+          "descrizione": "",
+          "correzione_proposta": "",
+          "reviewer": "compliance-amount-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+          "riga": 26,
+          "gravita": "MEDIUM",
+          "descrizione": "",
+          "correzione_proposta": "",
+          "reviewer": "compliance-amount-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+          "riga": 32,
+          "gravita": "MEDIUM",
+          "descrizione": "",
+          "correzione_proposta": "",
+          "reviewer": "compliance-amount-reviewer"
+        }
+      ]
+    },
+    {
+      "nome": "api-contract-reviewer",
+      "stato": "OK",
+      "partenza": "15:07:23.818",
+      "durata_s": 54.8,
+      "token": 51186,
+      "costo": 0.0,
+      "motivo": null,
+      "findings": [
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+          "riga": 26,
+          "gravita": "HIGH",
+          "descrizione": "L'endpoint espone direttamente l'entity JPA Movement (anche alla riga 34): il contratto pubblico e' accoppiato alla persistenza e ogni modifica del modello interno diventa un breaking change.",
+          "correzione_proposta": "Introdurre un DTO di risposta (es. MovementResponse) con mapping esplicito e restituire quello, mantenendo l'entity confinata al layer di persistenza",
+          "reviewer": "api-contract-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+          "riga": 26,
+          "gravita": "HIGH",
+          "descrizione": "Gli endpoint GET non applicano alcun controllo di autorizzazione/ownership su accountId: un chiamante puo' leggere movimenti ed estratti conto di conti non propri.",
+          "correzione_proposta": "Verificare autenticazione e appartenenza del conto all'utente autenticato prima di restituire i dati, o delegare a un layer di security dedicato",
+          "reviewer": "api-contract-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+          "riga": 26,
+          "gravita": "MEDIUM",
+          "descrizione": "La lista movimenti non e' paginata: la risposta cresce illimitatamente e mancano parametri page/size nel contratto, con payload non deterministico.",
+          "correzione_proposta": "Esporre parametri di paginazione (Pageable o page/size) e restituire una struttura paginata (Page<MovementResponse>) con metadati",
+          "reviewer": "api-contract-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+          "riga": 21,
+          "gravita": "MEDIUM",
+          "descrizione": "Il POST /transfer non prevede chiave di idempotenza: invii duplicati della stessa richiesta generano trasferimenti multipli, rendendo il contratto non idempotente su un'operazione monetaria.",
+          "correzione_proposta": "Accettare un header di idempotency key e deduplicare le richieste ripetute restituendo la stessa risposta",
+          "reviewer": "api-contract-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+          "riga": 33,
+          "gravita": "MEDIUM",
+          "descrizione": "L'endpoint /statement ignora il valore ritornato da buildStatement e restituisce una lista non correlata: il contratto non espone il totale che il nome dell'endpoint suggerisce.",
+          "correzione_proposta": "Definire un DTO di estratto conto che includa totale e movimenti, usare il valore calcolato e rimuovere la query ridondante",
+          "reviewer": "api-contract-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+          "riga": 21,
+          "gravita": "LOW",
+          "descrizione": "Il trasferimento restituisce sempre 200 OK tramite ResponseEntity.ok: per un'operazione di creazione non viene indicato alcun nuovo stato risorsa.",
+          "correzione_proposta": "Valutare il ritorno di 201 Created con header Location verso la risorsa transfer, mantenendo 200 per operazioni non di creazione",
+          "reviewer": "api-contract-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/dto/TransferRequest.java",
+          "riga": 20,
+          "gravita": "MEDIUM",
+          "descrizione": "Il campo description non ha vincoli di lunghezza: input arbitrariamente lunghi non sono validati a contratto e possono causare errori di persistenza (500) invece di un 400.",
+          "correzione_proposta": "Aggiungere @Size(max = N) coerente con la colonna DB e relativo messaggio di errore",
+          "reviewer": "api-contract-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/dto/TransferRequest.java",
+          "riga": 17,
+          "gravita": "MEDIUM",
+          "descrizione": "amount non vincola la scala decimale: sono accettati valori con piu' di 2 decimali che poi vengono arrotondati dalla colonna (scale=2), con disallineamento tra richiesta accettata e importo effettivo.",
+          "correzione_proposta": "Aggiungere @Digits(integer=..., fraction=2) (o validazione equivalente) e uniformare il messaggio a un limite coerente col dominio",
+          "reviewer": "api-contract-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+          "riga": 32,
+          "gravita": "MEDIUM",
+          "descrizione": "Gli errori 'source/target account not found' sono lanciati come IllegalArgumentException e mappati a 400: semanticamente un conto inesistente e' una risorsa non trovata (404).",
+          "correzione_proposta": "Introdurre eccezioni dedicate (es. ResourceNotFoundException) mappate a 404 e distinguerle dagli errori di validazione 400",
+          "reviewer": "api-contract-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+          "riga": 27,
+          "gravita": "LOW",
+          "descrizione": "Il vincolo fromAccountId != toAccountId e' gestito solo a livello di logica e non e' documentato nel contratto del DTO, con messaggio d'errore generico non strutturato.",
+          "correzione_proposta": "Documentare il vincolo cross-field nel DTO/OpenAPI e restituire un errore di validazione coerente con lo schema d'errore pubblico",
+          "reviewer": "api-contract-reviewer"
+        }
+      ]
+    },
+    {
+      "nome": "performance-reviewer",
+      "stato": "OK",
+      "partenza": "15:07:23.841",
+      "durata_s": 159.0,
+      "token": 66927,
+      "costo": 0.0,
+      "motivo": null,
+      "findings": [
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+          "riga": 76,
+          "gravita": "HIGH",
+          "descrizione": "N+1 query: accountRepo.findById viene eseguito una volta per ogni movimento della lista (una SELECT per riga), allungando la transazione read-only proporzionalmente alla cronologia del conto; il risultato acc risulta inoltre inutilizzato.",
+          "correzione_proposta": "Rimuovere la lookup dell'account dal ciclo se non necessaria, altrimenti risolverla con una singola query (JOIN FETCH o IN sui accountId distinti) caricando l'account una sola volta fuori dal loop.",
+          "reviewer": "performance-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementRepository.java",
+          "riga": 7,
+          "gravita": "HIGH",
+          "descrizione": "findByAccountIdOrderByExecutedAtDesc restituisce una List non paginata: gli endpoint GET /api/movements e /statement/{accountId} materializzano l'intera cronologia dei movimenti di un conto in memoria e la serializzano integralmente, con costo crescente senza bound.",
+          "correzione_proposta": "Accettare un parametro Pageable (o @Limit) e restituire Page/Movie ridotto, applicando paginazione con cap di righe per richiesta negli endpoint esposti.",
+          "reviewer": "performance-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+          "riga": 34,
+          "gravita": "MEDIUM",
+          "descrizione": "statement() carica due volte la stessa collection nella stessa richiesta: buildStatement legge tutti i movimenti (e i conti correlati) e la riga successiva riesegue la medesima query; il risultato di buildStatement viene scartato, pagando il costo senza alcun utilizzo.",
+          "correzione_proposta": "Caricare la lista una sola volta e passarla a buildStatement (o restituire direttamente il risultato), eliminando la doppia scansione della tabella movement per richiesta.",
+          "reviewer": "performance-reviewer"
+        },
+        {
+          "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+          "riga": 73,
+          "gravita": "MEDIUM",
+          "descrizione": "Il totale dell'estratto conto viene calcolato in memoria iterando su tutte le entity Movement caricate, quando basterebbe un'unica query aggregata: attuale costo di I/O e memoria O(n) con caricamento di righe complete inutili.",
+          "correzione_proposta": "Introdurre una query aggregata nel repository (es. @Query \"SELECT COALESCE(SUM(m.amount),0) FROM Movement m WHERE m.accountId = :accountId\") e calcolare il totale lato database senza materializzare le righe.",
+          "reviewer": "performance-reviewer"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+      "riga": 31,
+      "gravita": "CRITICAL",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "movement-domain-reviewer": "CRITICAL"
+      },
+      "reviewer": [
+        "movement-domain-reviewer"
+      ],
+      "descrizione": "Check-then-act sul saldo senza lock pessimistico: due transfer concorrenti sullo stesso conto superano entrambi il controllo fondi sufficienti (riga 36) prima del salvataggio, producendo saldo negativo (overdraft non autorizzato).",
+      "correzione_proposta": "Caricare from e to con lock pessimistico (es. @Lock(LockModeType.PESSIMISTIC_WRITE) su un metodo dedicato di AccountRepository) prima di leggere i saldi, oppure eseguire un UPDATE condizionale atomico del saldo con controllo importo>=amount nella stessa query."
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+      "riga": 72,
+      "gravita": "CRITICAL",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "compliance-amount-reviewer": "CRITICAL"
+      },
+      "reviewer": [
+        "compliance-amount-reviewer"
+      ],
+      "descrizione": "",
+      "correzione_proposta": ""
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+      "riga": 26,
+      "gravita": "HIGH",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "api-contract-reviewer": "HIGH"
+      },
+      "reviewer": [
+        "api-contract-reviewer"
+      ],
+      "descrizione": "L'endpoint espone direttamente l'entity JPA Movement (anche alla riga 34): il contratto pubblico e' accoppiato alla persistenza e ogni modifica del modello interno diventa un breaking change.",
+      "correzione_proposta": "Introdurre un DTO di risposta (es. MovementResponse) con mapping esplicito e restituire quello, mantenendo l'entity confinata al layer di persistenza"
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+      "riga": 26,
+      "gravita": "HIGH",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "api-contract-reviewer": "HIGH"
+      },
+      "reviewer": [
+        "api-contract-reviewer"
+      ],
+      "descrizione": "Gli endpoint GET non applicano alcun controllo di autorizzazione/ownership su accountId: un chiamante puo' leggere movimenti ed estratti conto di conti non propri.",
+      "correzione_proposta": "Verificare autenticazione e appartenenza del conto all'utente autenticato prima di restituire i dati, o delegare a un layer di security dedicato"
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementRepository.java",
+      "riga": 7,
+      "gravita": "HIGH",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "performance-reviewer": "HIGH"
+      },
+      "reviewer": [
+        "performance-reviewer"
+      ],
+      "descrizione": "findByAccountIdOrderByExecutedAtDesc restituisce una List non paginata: gli endpoint GET /api/movements e /statement/{accountId} materializzano l'intera cronologia dei movimenti di un conto in memoria e la serializzano integralmente, con costo crescente senza bound.",
+      "correzione_proposta": "Accettare un parametro Pageable (o @Limit) e restituire Page/Movie ridotto, applicando paginazione con cap di righe per richiesta negli endpoint esposti."
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+      "riga": 26,
+      "gravita": "HIGH",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "movement-domain-reviewer": "HIGH"
+      },
+      "reviewer": [
+        "movement-domain-reviewer"
+      ],
+      "descrizione": "Operazione transfer non idempotente: nessuna idempotency key in TransferRequest né deduplica lato servizio, quindi un retry del client (es. timeout di rete) duplica addebito, accredito e i due movimenti.",
+      "correzione_proposta": "Aggiungere un campo idempotencyKey @NotNull al TransferRequest e persistere la chiave in univocità (constraint unique); prima di elaborare, verificare se la chiave è già stata processata e restituire la risposta precedente, mantenendo l'inserimento della chiave nella stessa transazione del transfer."
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+      "riga": 36,
+      "gravita": "HIGH",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "movement-domain-reviewer": "HIGH"
+      },
+      "reviewer": [
+        "movement-domain-reviewer"
+      ],
+      "descrizione": "Il vincolo importo > 0 è dichiarato solo nel DTO (@DecimalMin); se transfer viene invocato da un altro servizio con importo negativo, il controllo fondi passa (compareTo di saldo positivo contro negativo è >= 0) e il verso del trasferimento si inverte: il mittente viene accreditato e il destinatario addebitato.",
+      "correzione_proposta": "Validare all'inizio del metodo transfer: if (req.getAmount() == null || req.getAmount().signum() <= 0) throw new IllegalArgumentException(\"amount must be > 0\");, replicando l'invariante di dominio anche nel servizio e non solo nella validazione API."
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+      "riga": 51,
+      "gravita": "HIGH",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "compliance-amount-reviewer": "HIGH"
+      },
+      "reviewer": [
+        "compliance-amount-reviewer"
+      ],
+      "descrizione": "",
+      "correzione_proposta": ""
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+      "riga": 76,
+      "gravita": "HIGH",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "movement-domain-reviewer": "HIGH"
+      },
+      "reviewer": [
+        "movement-domain-reviewer"
+      ],
+      "descrizione": "N+1 nel ciclo di buildStatement: accountRepo.findById viene eseguito per ogni movimento e la variabile acc risultante non viene mai utilizzata, producendo una query al database per riga oltre che codice morto.",
+      "correzione_proposta": "Eliminare del tutto il caricamento del conto dentro il ciclo (acc non è usato); se servisse in futuro, raggruppare gli accountId distinti e caricarli una sola volta con findAllById prima del loop."
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+      "riga": 76,
+      "gravita": "HIGH",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "compliance-amount-reviewer": "HIGH"
+      },
+      "reviewer": [
+        "compliance-amount-reviewer"
+      ],
+      "descrizione": "",
+      "correzione_proposta": ""
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+      "riga": 76,
+      "gravita": "HIGH",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "performance-reviewer": "HIGH"
+      },
+      "reviewer": [
+        "performance-reviewer"
+      ],
+      "descrizione": "N+1 query: accountRepo.findById viene eseguito una volta per ogni movimento della lista (una SELECT per riga), allungando la transazione read-only proporzionalmente alla cronologia del conto; il risultato acc risulta inoltre inutilizzato.",
+      "correzione_proposta": "Rimuovere la lookup dell'account dal ciclo se non necessaria, altrimenti risolverla con una singola query (JOIN FETCH o IN sui accountId distinti) caricando l'account una sola volta fuori dal loop."
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+      "riga": 78,
+      "gravita": "HIGH",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "movement-domain-reviewer": "HIGH"
+      },
+      "reviewer": [
+        "movement-domain-reviewer"
+      ],
+      "descrizione": "Il totale dell'estratto conto somma tutti gli importi senza applicare il segno per tipo di movimento: TRANSFER_OUT, DEPOSIT e WITHDRAW sono trattati come incrementi, quindi il saldo calcolato è errato per qualsiasi conto con prelievi o trasferimenti in uscita.",
+      "correzione_proposta": "Derivare il segno dal tipo: sottrarre l'importo per TRANSFER_OUT e WITHDRAW, sommarlo per TRANSFER_IN e DEPOSIT (es. monto = monto.add(signFor(m.getType()).multiply(m.getAmount()));), o preferibilmente calcolare il saldo via query aggregata SUM con CASE sulla colonna type."
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+      "riga": 79,
+      "gravita": "HIGH",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "compliance-amount-reviewer": "HIGH"
+      },
+      "reviewer": [
+        "compliance-amount-reviewer"
+      ],
+      "descrizione": "",
+      "correzione_proposta": ""
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/Movement.java",
+      "riga": 19,
+      "gravita": "MEDIUM",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "compliance-amount-reviewer": "MEDIUM"
+      },
+      "reviewer": [
+        "compliance-amount-reviewer"
+      ],
+      "descrizione": "",
+      "correzione_proposta": ""
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/Movement.java",
+      "riga": 22,
+      "gravita": "MEDIUM",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "compliance-amount-reviewer": "MEDIUM"
+      },
+      "reviewer": [
+        "compliance-amount-reviewer"
+      ],
+      "descrizione": "",
+      "correzione_proposta": ""
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+      "riga": 21,
+      "gravita": "MEDIUM",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "api-contract-reviewer": "MEDIUM"
+      },
+      "reviewer": [
+        "api-contract-reviewer"
+      ],
+      "descrizione": "Il POST /transfer non prevede chiave di idempotenza: invii duplicati della stessa richiesta generano trasferimenti multipli, rendendo il contratto non idempotente su un'operazione monetaria.",
+      "correzione_proposta": "Accettare un header di idempotency key e deduplicare le richieste ripetute restituendo la stessa risposta"
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+      "riga": 26,
+      "gravita": "MEDIUM",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "compliance-amount-reviewer": "MEDIUM"
+      },
+      "reviewer": [
+        "compliance-amount-reviewer"
+      ],
+      "descrizione": "",
+      "correzione_proposta": ""
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+      "riga": 26,
+      "gravita": "MEDIUM",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "api-contract-reviewer": "MEDIUM"
+      },
+      "reviewer": [
+        "api-contract-reviewer"
+      ],
+      "descrizione": "La lista movimenti non e' paginata: la risposta cresce illimitatamente e mancano parametri page/size nel contratto, con payload non deterministico.",
+      "correzione_proposta": "Esporre parametri di paginazione (Pageable o page/size) e restituire una struttura paginata (Page<MovementResponse>) con metadati"
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+      "riga": 32,
+      "gravita": "MEDIUM",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "compliance-amount-reviewer": "MEDIUM"
+      },
+      "reviewer": [
+        "compliance-amount-reviewer"
+      ],
+      "descrizione": "",
+      "correzione_proposta": ""
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+      "riga": 33,
+      "gravita": "MEDIUM",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "movement-domain-reviewer": "MEDIUM"
+      },
+      "reviewer": [
+        "movement-domain-reviewer"
+      ],
+      "descrizione": "statement() invoca buildStatement(accountId) e ne scarta il risultato, poi re-interroga lo stesso repository con la stessa query alla riga 34: doppia lettura ridondante del medesimo dataset per ogni richiesta di estratto conto.",
+      "correzione_proposta": "Eliminare la chiamata a buildStatement e restituire direttamente il risultato della query (o, se serve il totale, comporre una risposta che includa sia il totale calcolato sia la lista, effettuando un'unica lettura dei movimenti condivisa tra le due elaborazioni)."
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+      "riga": 33,
+      "gravita": "MEDIUM",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "api-contract-reviewer": "MEDIUM"
+      },
+      "reviewer": [
+        "api-contract-reviewer"
+      ],
+      "descrizione": "L'endpoint /statement ignora il valore ritornato da buildStatement e restituisce una lista non correlata: il contratto non espone il totale che il nome dell'endpoint suggerisce.",
+      "correzione_proposta": "Definire un DTO di estratto conto che includa totale e movimenti, usare il valore calcolato e rimuovere la query ridondante"
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+      "riga": 34,
+      "gravita": "MEDIUM",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "performance-reviewer": "MEDIUM"
+      },
+      "reviewer": [
+        "performance-reviewer"
+      ],
+      "descrizione": "statement() carica due volte la stessa collection nella stessa richiesta: buildStatement legge tutti i movimenti (e i conti correlati) e la riga successiva riesegue la medesima query; il risultato di buildStatement viene scartato, pagando il costo senza alcun utilizzo.",
+      "correzione_proposta": "Caricare la lista una sola volta e passarla a buildStatement (o restituire direttamente il risultato), eliminando la doppia scansione della tabella movement per richiesta."
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+      "riga": 31,
+      "gravita": "MEDIUM",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "movement-domain-reviewer": "MEDIUM"
+      },
+      "reviewer": [
+        "movement-domain-reviewer"
+      ],
+      "descrizione": "Il transfer non verifica né lo stato degli account (consentito anche a conti CLOSED/FROZEN) né la coincidenza della valuta tra conto origine e destinazione (campo currency esistente su Account), violando invarianze di dominio bancario.",
+      "correzione_proposta": "Dopo il caricamento di from e to, verificare che entrambi abbiano status=\"ACTIVE\" e che from.getCurrency().equals(to.getCurrency()); altrimenti throw IllegalArgumentException con messaggio esplicito, prima di qualsiasi modifica ai saldi."
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+      "riga": 32,
+      "gravita": "MEDIUM",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "api-contract-reviewer": "MEDIUM"
+      },
+      "reviewer": [
+        "api-contract-reviewer"
+      ],
+      "descrizione": "Gli errori 'source/target account not found' sono lanciati come IllegalArgumentException e mappati a 400: semanticamente un conto inesistente e' una risorsa non trovata (404).",
+      "correzione_proposta": "Introdurre eccezioni dedicate (es. ResourceNotFoundException) mappate a 404 e distinguerle dagli errori di validazione 400"
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+      "riga": 52,
+      "gravita": "MEDIUM",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "movement-domain-reviewer": "MEDIUM"
+      },
+      "reviewer": [
+        "movement-domain-reviewer"
+      ],
+      "descrizione": "I movimenti non tracciano il correlationId della richiesta: i record TRANSFER_OUT/TRANSFER_IN creati qui (righe 45-61) non possono essere correlati ai log della stessa operazione, indebolendo la tracciabilità interna.",
+      "correzione_proposta": "Aggiungere a Movement una colonna correlation_id valorizzata in transfer() leggendola da MDC (come già fa GlobalExceptionHandler) e propagarla anche ai due record creati, così da poter ricostruire l'intera operazione."
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+      "riga": 73,
+      "gravita": "MEDIUM",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "movement-domain-reviewer": "MEDIUM"
+      },
+      "reviewer": [
+        "movement-domain-reviewer"
+      ],
+      "descrizione": "findByAccountIdOrderByExecutedAtDesc carica l'intero storico dei movimenti del conto in memoria senza paginazione né streaming: per conti con molti movimenti si rischia esaurimento di heap e tempi di risposta non controllati.",
+      "correzione_proposta": "Usare Page<Movement> findByAccountIdOrderByExecutedAtDesc(Long accountId, Pageable pageable) (o un endpoint cursored con lastExecutedAt/lastId) e far restituire buildStatement tramite aggregazione lato database invece di materializzare la lista completa."
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+      "riga": 73,
+      "gravita": "MEDIUM",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "performance-reviewer": "MEDIUM"
+      },
+      "reviewer": [
+        "performance-reviewer"
+      ],
+      "descrizione": "Il totale dell'estratto conto viene calcolato in memoria iterando su tutte le entity Movement caricate, quando basterebbe un'unica query aggregata: attuale costo di I/O e memoria O(n) con caricamento di righe complete inutili.",
+      "correzione_proposta": "Introdurre una query aggregata nel repository (es. @Query \"SELECT COALESCE(SUM(m.amount),0) FROM Movement m WHERE m.accountId = :accountId\") e calcolare il totale lato database senza materializzare le righe."
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+      "riga": 79,
+      "gravita": "MEDIUM",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "movement-domain-reviewer": "MEDIUM"
+      },
+      "reviewer": [
+        "movement-domain-reviewer"
+      ],
+      "descrizione": "La soglia AML (>= 10000 EUR) viene rilevata ma il corpo del blocco è vuoto: nessuna segnalazione, nessun log e nessun audit trail viene emesso, rendendo l'indicatore inoperante.",
+      "correzione_proposta": "Emettere almeno una registrazione audit strutturata nel ramo di superamento soglia (log.warn con accountId, importo, movementId e correlationId) e introdurre un punto di estensione per la creazione della segnalazione AML, sostituendo il blocco vuoto."
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/dto/TransferRequest.java",
+      "riga": 17,
+      "gravita": "MEDIUM",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "api-contract-reviewer": "MEDIUM"
+      },
+      "reviewer": [
+        "api-contract-reviewer"
+      ],
+      "descrizione": "amount non vincola la scala decimale: sono accettati valori con piu' di 2 decimali che poi vengono arrotondati dalla colonna (scale=2), con disallineamento tra richiesta accettata e importo effettivo.",
+      "correzione_proposta": "Aggiungere @Digits(integer=..., fraction=2) (o validazione equivalente) e uniformare il messaggio a un limite coerente col dominio"
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/dto/TransferRequest.java",
+      "riga": 20,
+      "gravita": "MEDIUM",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "api-contract-reviewer": "MEDIUM"
+      },
+      "reviewer": [
+        "api-contract-reviewer"
+      ],
+      "descrizione": "Il campo description non ha vincoli di lunghezza: input arbitrariamente lunghi non sono validati a contratto e possono causare errori di persistenza (500) invece di un 400.",
+      "correzione_proposta": "Aggiungere @Size(max = N) coerente con la colonna DB e relativo messaggio di errore"
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/Movement.java",
+      "riga": 19,
+      "gravita": "LOW",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "movement-domain-reviewer": "LOW"
+      },
+      "reviewer": [
+        "movement-domain-reviewer"
+      ],
+      "descrizione": "Il campo type è una String libera senza vincolo JPA né enum di dominio: è possibile persistere valori non previsti (DEPOSIT, WITHDRAW, TRANSFER_OUT, TRANSFER_IN), con conseguente corruzione della logica di segno in buildStatement.",
+      "correzione_proposta": "Introdurre un enum MovementType (DEPOSIT, WITHDRAW, TRANSFER_OUT, TRANSFER_IN), dichiarare il campo come @Enumerated(EnumType.STRING) con nullable=false, e mappare i valori nei punti di creazione dei movimenti."
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementController.java",
+      "riga": 21,
+      "gravita": "LOW",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "api-contract-reviewer": "LOW"
+      },
+      "reviewer": [
+        "api-contract-reviewer"
+      ],
+      "descrizione": "Il trasferimento restituisce sempre 200 OK tramite ResponseEntity.ok: per un'operazione di creazione non viene indicato alcun nuovo stato risorsa.",
+      "correzione_proposta": "Valutare il ritorno di 201 Created con header Location verso la risorsa transfer, mantenendo 200 per operazioni non di creazione"
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+      "riga": 27,
+      "gravita": "LOW",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "api-contract-reviewer": "LOW"
+      },
+      "reviewer": [
+        "api-contract-reviewer"
+      ],
+      "descrizione": "Il vincolo fromAccountId != toAccountId e' gestito solo a livello di logica e non e' documentato nel contratto del DTO, con messaggio d'errore generico non strutturato.",
+      "correzione_proposta": "Documentare il vincolo cross-field nel DTO/OpenAPI e restituire un errore di validazione coerente con lo schema d'errore pubblico"
+    },
+    {
+      "file": "src/main/java/com/lipari/bank/movement/MovementService.java",
+      "riga": 51,
+      "gravita": "LOW",
+      "conflitto": false,
+      "gravita_per_lente": {
+        "movement-domain-reviewer": "LOW"
+      },
+      "reviewer": [
+        "movement-domain-reviewer"
+      ],
+      "descrizione": "Instant.now() viene calcolato separatamente per il movimento di uscita (riga 51) e di ingresso (riga 60): i due movimenti dello stesso transfer ricevono timestamp leggermente diversi, impedendo di appaiarli per identità temporale.",
+      "correzione_proposta": "Calcolare una sola volta Instant now = Instant.now(); prima di costruire i due movimenti e assegnare lo stesso valore a out.setExecutedAt(now) e in.setExecutedAt(now), così da mantenere coerenza temporale del transfer."
+    }
+  ]
+}

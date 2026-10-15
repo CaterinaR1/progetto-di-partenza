@@ -1,6 +1,8 @@
 package com.lipari.bank.movement;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.lipari.bank.account.Account;
@@ -59,5 +61,25 @@ public class MovementService {
         movementRepo.save(in);
 
         return new TransferResponse(out.getId(), from.getBalance(), to.getBalance(), "COMPLETED");
+    }
+
+    /**
+     * Estratto conto di un conto: somma gli importi dei movimenti.
+     * Caso di prova del Prompt 1: contiene difetti voluti (query nel ciclo,
+     * soglia AML non gestita, somma senza segno).
+     */
+    @Transactional(readOnly = true)
+    public BigDecimal buildStatement(Long accountId) {
+        List<Movement> movements = movementRepo.findByAccountIdOrderByExecutedAtDesc(accountId);
+        BigDecimal totale = BigDecimal.ZERO;
+        for (Movement m : movements) {
+            Account acc = accountRepo.findById(m.getAccountId())
+                    .orElseThrow(() -> new IllegalArgumentException("account not found"));
+            totale = totale.add(m.getAmount());
+            if (m.getAmount().compareTo(new BigDecimal("10000")) >= 0) {
+                // soglia AML (>= 10000 EUR): qui non viene emessa nessuna segnalazione/audit
+            }
+        }
+        return totale;
     }
 }

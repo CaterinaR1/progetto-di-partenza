@@ -13,7 +13,7 @@ description: |-
   - su file fuori da movement/**
   - su richieste generiche di "review" non specifiche al dominio movimenti
 
-mode: subagent
+mode: all
 tools:
   read: true
   grep: true
@@ -60,6 +60,7 @@ Revisare SOLO le modifiche ai file del dominio movimenti, applicando controlli d
 
 ## Regole operative
 - Attiva solo su path com.lipari.bank.movement/** (inclusi movement/dto, test movimento).
+- Quando sei invocato esplicitamente dall'orchestrator (--agent), applica la tua lente a tutto il target indicato anche se non e' nel perimetro: il filtro di perimetro vale solo per il routing automatico.
 - Non modificare codice. Correzione proposta MA NON APPLICATA.
 - Per ogni rilievo: file, riga, gravit� (CRITICAL/HIGH/MEDIUM/LOW), descrizione, correzione_proposta non applicata.
 - SEGUI ESATTAMENTE la skill review-format.

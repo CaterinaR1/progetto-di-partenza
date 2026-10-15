@@ -1,0 +1,17 @@
+{
+  "model": "sonnet",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "_comment": "Gino: mi serviva per vedere cosa stava usando durante le review.",
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/scripts/log-tool.py\" || exit 1"
+          }
+        ]
+      }
+    ]
+  }
+}

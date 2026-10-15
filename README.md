@@ -107,3 +107,143 @@ Non è un sistema production-grade, e non pretende di esserlo: non ha circuit br
 Soprattutto: **non è un'architettura modello.** È un backend scritto come lo scrive una squadra sotto scadenza, con le scorciatoie che una squadra sotto scadenza prende. È esattamente per questo che serve: i tuoi reviewer avranno qualcosa di vero da trovare, e quello che troveranno non te l'ha suggerito nessuno.
 
 Per la stessa ragione, se lo riusi fuori dal bootcamp trattalo come codice da recensire, non come codice da mostrare.
+
+## Claude Code Assets (Giorno 1 - PW G1)
+
+Questa sezione documenta gli asset agentici costruiti per il Giorno 1 su OpenCode:
+tre reviewer con perimetri dichiarati e disgiunti, una skill con il formato d'uscita
+condiviso, e il presidio che impedisce di scrivere sul codice revisionato.
+
+### Regola con cui ho separato i perimetri
+
+Il criterio di separazione e' la **cartella/tipo di cambiamento**, con un tie-break
+esplicito sul caso difficile. Un reviewer parte solo se la richiesta cade dentro il
+suo perimetro, e i perimetri non si sovrappongono.
+
+- **movement-domain-reviewer** -> attivo solo su `com.lipari.bank.movement/**`
+  (movement, movement/dto, test movimento). Domanda: la logica interna dei
+  movimenti e' corretta (transazioni, idempotency, invarianze, N+1, tracciabilita')?
+- **compliance-amount-reviewer** -> attivo solo quando la modifica tocca
+  direttamente importi/saldi/calcoli finanziari o regole AML (amount, balance,
+  BigDecimal, soglie, audit su operazioni monetarie). Domanda: il denaro e' trattato
+  secondo le regole di compliance?
+- **api-contract-reviewer** -> attivo solo sul contratto API esterno
+  (`@RestController`, endpoint `/api/**`, DTO esposti). Domanda: cio' che leggiamo
+  fuori e' stabile, validato e sicuro?
+
+**Caso difficile - `MovementController.java`** (sta nel dominio movimenti, maneggia
+un importo ed e' il contratto esposto): rivendicato da tutti e tre. Tie-break **per
+concern**: vince il reviewer che corrisponde all'aspetto che il cambiamento tocca.
+Se la modifica e' alla logica di dominio -> `movement-domain-reviewer`; se tocca la
+forma/stabilita' del contratto pubblico -> `api-contract-reviewer`; se cambia
+davvero il calcolo/valore degli importi -> `compliance-amount-reviewer`. In nessun
+caso ne partono due insieme: chi perde il tie-break **non viene attivato**.
+Questo e' il motivo per cui le description sono scritte in modo mutualmente esclusivo
+(dicono anche quando NON partire) e per cui il routing e' gia' di per se' un
+informazione: se parte il reviewer del contratto, la richiesta riguardava il contratto.
+
+### Artefatti
+
+**Subagent - `.opencode/agents/`** (frontmatter OpenCode: `mode: subagent`, `permission`):
+
+| Artefatto | Percorso | Description (sintesi) | Invocazione |
+|---|---|---|---|
+| movement-domain-reviewer | `.opencode/agents/movement-domain-reviewer.md` | Parte su `movement/**`; NON parte su contratto API puro ne' su file fuori perimetro | `opencode run "review del dominio movimenti di MovementService.java"` (routing automatico) |
+| compliance-amount-reviewer | `.opencode/agents/compliance-amount-reviewer.md` | Parte quando cambiano importi/saldi/calcoli/AML; NON parte su pura struttura senza impatto monetario | `opencode run "review compliance sugli importi di TransferRequest.java"` (routing automatico) |
+| api-contract-reviewer | `.opencode/agents/api-contract-reviewer.md` | Parte su `@RestController`/`/api/**`/DTO esposti; NON parte su logica service/repo interna senza contratto | `opencode run "review del contratto API esterno di MovementController.java"` (routing automatico) |
+
+Invocazione esplicita (per forzare un reviewer): aggiungere `--agent <nome>`, es.
+`opencode run "..." --agent movement-domain-reviewer`.
+
+**Skill - `.opencode/skills/`**:
+
+- `review-format/SKILL.md` - formato unico dei rilievi: ogni finding ha `file`,
+  `riga`, `gravita` (CRITICAL/HIGH/MEDIUM/LOW), `descrizione`, `correzione_proposta`
+  (proposta e **non applicata**), output array JSON. E' la fonte unica di verita' del
+  formato e i tre reviewer la caricano; la sua allowlist (`Read, Grep, Glob`) e'
+  dimensionata sul ruolo, non su cio' che potrebbe servire.
+- `compliance-aml-check/SKILL.md` - i cinque controlli AML, portata per coerenza
+  OpenCode.
+
+### Presidio: nessuno dei tre scrive sul codice che revisiona
+
+Il divieto **non** e' una buona intenzione nel system prompt: e' un presidio di
+codice. In OpenCode non esiste l'hook di Claude Code, quindi il presidio e' il
+**blocco `permission` di ogni reviewer**:
+
+```yaml
+permission:
+  edit: deny              # nessuna scrittura, mai
+  bash:
+    "*": deny             # shell negata di default
+    "rg *": allow         # ammessi solo comandi di sola lettura/osservazione
+    "find *": allow
+    "ls *": allow
+    "cd *": allow
+    "pwd": allow
+    "echo *": allow
+    "Get-ChildItem *": allow   # lettura Windows (la shell qui e' PowerShell)
+    "Get-Content *": allow
+    "Select-String *": allow
+    "Get-Item *": allow
+    "dir *": allow
+    "type *": allow
+    "findstr *": allow
+    "git log*": allow          # git in sola lettura, per vedere cosa cambia
+    "git status*": allow
+    "git diff*": allow
+    "git show*": allow
+```
+
+Il CLI applica `edit: deny` da codice, quindi regge anche quando il modello e'
+convinto di fare la cosa giusta. La prova e' doppia: chiedere una modifica durante
+una review e verificare che venga bloccata, e verificare che il resto della sessione
+continui a funzionare. L'hook in `.claude/settings.json` resta per Claude Code (in
+OpenCode non ha effetto), ma per OpenCode il presidio e' il blocco permission.
+
+### Cosa ho dovuto cambiare di quello che ho ereditato (una riga di ragione per modifica)
+
+- Portato il subagent da `.claude/agents/` a `.opencode/agents/` con frontmatter OpenCode - perche' OpenCode non legge `.claude/agents/`.
+- Riscritto `tools: ["*"]` in `tools` mirati (read/grep/glob) - perche' un reviewer non deve avere piu' strumenti di quelli che il ruolo giustifica.
+- Rimossa la riga `model: sonnet` - perche' OpenCode non la conosce e rifiuta la config con un errore generico.
+- Aggiunto `permission` con `edit: deny` e bash allowlist - perche' il presidio anti-scrittura in OpenCode vive nel permesso, non nel prompt.
+- Riscritta la `description` dicendo quando parte e quando NON parte - perche' con tre reviewer il confine e' l'informazione, e una description larga farebbe partire tutti e tre.
+- Sostituita la `description: "Reviewer di codice"` con tre perimetri nominati (movimenti / importi-compliance / contratto API) - perche' un nome/description che promette troppo e' la prima riga che si allarga.
+- Introdotto il riferimento obbligatorio alla skill `review-format` in tutti e tre - perche' tre uscite in formati diversi non si leggono e non si aggregano.
+- Eliminata la ripetizione libera del formato dentro i system prompt - perche' il formato deve stare in un posto solo (la skill), cosi' un quarto reviewer lo eredita senza che glielo si debba dire.
+- Portata la skill AML in `.opencode/skills/` - perche' OpenCode cerca le skill anche in `.claude/skills/`, ma teniamo la struttura coerente.
+- Mantenuto l'hook `.claude/settings.json` ereditato - perche' serve ancora a Claude Code e non interferisce con OpenCode.
+- Aggiunti comandi di lettura Windows all'allowlist (`Get-ChildItem`, `Get-Content`, `Select-String`, `dir`, `type`, `findstr`) - perche' l'allowlist ereditata era tarata su shell Unix e su Windows i reviewer tentavano comandi bloccati, abortendo la review a meta'.
+- Aggiunti `git log/status/diff/show` all'allowlist - perche' il reviewer cerca legittimamente di vedere cosa cambia, e negare anche la lettura di git faceva fallire il subagent invece di limitarlo.
+- Resa la description di ogni reviewer mutuamente esclusiva (ognuna dichiara anche quando NON partire) - perche' ereditando le tre description si toccavano e piu' di un reviewer poteva rivendicare la stessa richiesta.
+
+### Run trace - la prova che il routing gira
+
+Prova eseguita in **una sessione OpenCode**, con richieste di perimetri diversi, e
+con il reviewer **mai nominato** (la richiesta descrive solo il perimetro, OpenCode
+sceglie il subagent in base alla `description`). Il dettaglio completo, con le righe
+di log che provano quale `... Agent` e' partito, e' in **`RUN-TRACE.md`**.
+
+| Richiesta | Reviewer partito | N. reviewer |
+|---|---|---|
+| dominio movimenti (`MovementService.java`) | movement-domain-reviewer | 1 |
+| contratto API esterno (`MovementController.java`) | api-contract-reviewer | 1 |
+| compliance importi (`TransferRequest.java`) | compliance-amount-reviewer | 1 |
+| fuori perimetro (`pom.xml`) | nessuno | 0 |
+
+- Su ognuna delle tre richieste ne parte **uno solo**, e i perimetri sono disgiunti;
+  il fatto che sia partito *quel* reviewer e' gia' un'informazione.
+- Sul file fuori perimetro **non si attiva nessuno dei tre**.
+
+Output salvati in `.md` (copia dei findings, formato `review-format`):
+
+- `review-MovementService.md` (movement-domain)
+- `review-API-MovementController.md` (api-contract)
+- `review-Amount-Movements.md` (compliance-amount)
+- `review-pom-out.md` (fuori perimetro - nessun reviewer dei tre attivato)
+- `auto-movement.md`, `auto-api.md`, `auto-compliance.md`, `auto-pom.md` (log di
+  sessione grezzi: contengono la riga `... Agent` che prova la delega)
+
+Ogni finding ha `file`, `riga`, `gravita`, `descrizione` e `correzione_proposta`
+(non applicata), come impone la skill `review-format`.
+

@@ -26,4 +26,11 @@ public class MovementController {
     public List<Movement> listByAccount(@RequestParam Long accountId) {
         return movementRepo.findByAccountIdOrderByExecutedAtDesc(accountId);
     }
+
+    /** Estratto conto. Caso di prova del Prompt 1: espone l'entity, lista senza paginazione. */
+    @GetMapping("/statement/{accountId}")
+    public List<Movement> statement(@PathVariable Long accountId) {
+        movementService.buildStatement(accountId);
+        return movementRepo.findByAccountIdOrderByExecutedAtDesc(accountId);
+    }
 }

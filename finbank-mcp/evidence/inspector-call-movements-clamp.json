@@ -1,0 +1,18 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"account_id\":1,\"limit_richiesto\":999,\"limit_applicato\":50,\"tetto_massimo\":50,\"count\":0,\"movimenti_totali_a_backend\":0,\"movimenti\":[]}"
+    }
+  ],
+  "structuredContent": {
+    "account_id": 1,
+    "limit_richiesto": 999,
+    "limit_applicato": 50,
+    "tetto_massimo": 50,
+    "count": 0,
+    "movimenti_totali_a_backend": 0,
+    "movimenti": []
+  },
+  "isError": false
+}

@@ -1,0 +1,9 @@
+{
+  "contents": [
+    {
+      "uri": "regolamento://aml-policy",
+      "mimeType": "text/markdown",
+      "text": "# Regolamento AML — LipariBank\n\nFonte: `.opencode/skills/compliance-aml-check/SKILL.md` (i cinque controlli\nantiriciclaggio del bootcamp). Questo file e' la copia esposta dal server MCP\ncome `regolamento://aml-policy`: ogni citazione di una soglia deve venire da\nqui, non dalla memoria del modello.\n\n## Soglie operative\n\n| Soglia | Effetto |\n|---|---|\n| movimenti **sopra 10.000 EUR** | segnalazione |\n| movimenti **sopra 5.000 EUR** | registrazione nell'audit |\n| movimenti di un **PEP sopra 1.000 EUR** | alert (flag `isPep`) |\n\n## Controlli obbligatori\n\n1. **Soglie operative** — come sopra: 10.000 EUR segnalazione, 5.000 EUR audit.\n2. **PEP screening** — flag `isPep` e alert sui movimenti sopra 1.000 EUR.\n3. **Watchlist screening** — `watchlistService.screen(fiscalCode)` alla\n   creazione di un cliente.\n4. **Audit trail** — `correlationId`, `userId`, `ipAddress` ed `executedAt`\n   obbligatori su ogni operazione monetaria.\n5. **Pattern di operazioni sospette** — smurfing, giri circolari, conti\n   dormienti, incoerenza geografica.\n\n## Nota sul server MCP\n\n`finbank-mcp` **non segnala e non registra nulla**: il tool\n`simulate_transfer_what_if` si limita a valorizzare `aml.flagged = true` e a\ncitare questa resource quando l'importo supera 10.000 EUR. La segnalazione\nspetta al backend e al processo di compliance, che hanno i campi di audit\n(`userId`, `ipAddress`, `correlationId`) che questo server non possiede.\n"
+    }
+  ]
+}

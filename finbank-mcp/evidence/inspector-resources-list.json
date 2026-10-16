@@ -1,0 +1,26 @@
+{
+  "resources": [
+    {
+      "name": "_resource_aml_policy",
+      "uri": "regolamento://aml-policy",
+      "description": "Regolamento AML del LipariBank: soglie di segnalazione e audit.\n\nLettura dal file finbank-mcp/regolamento/aml-policy.md a ogni richiesta.\nFonte unica per citare le soglie: non ricordarle a memoria.",
+      "mimeType": "text/markdown",
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "_resource_transfer_policy",
+      "uri": "regolamento://transfer-policy",
+      "description": "Regole operative di un bonifico: minimo, tetto del server MCP, invarianze.\n\nLettura dal file finbank-mcp/regolamento/transfer-policy.md a ogni richiesta.",
+      "mimeType": "text/markdown",
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    }
+  ]
+}

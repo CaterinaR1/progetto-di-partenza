@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "amount: deve essere > 0, ricevuto -50.00 - un bonifico di zero o negativo non e' simulabile"
+    }
+  ],
+  "isError": true
+}

@@ -1,0 +1,92 @@
+{
+  "tools": [
+    {
+      "name": "get_account_balance",
+      "title": "Get Account Balance",
+      "description": "Legge il saldo REALE di un conto dal backend LipariBank. Sola lettura.\n\nQuando usarla:\n- per sapere quanto c'e' davvero su un conto, invece di dedurlo dal codice;\n- per verificare un'ipotesi di saldo scritta in una review;\n- come punto di partenza prima di una simulazione di bonifico.\n\nNon usarla per:\n- spostare o simulare denaro (serve simulate_transfer_what_if);\n- vedere i movimenti di un conto (serve list_recent_movements);\n- cercare un conto per cliente o IBAN: non esiste una ricerca per IBAN.\n\nParametri: account_id - intero > 0. Nel database di riferimento esistono\n1 e 2; un id inesistente produce un errore, non un saldo vuoto.\n\nRitorna: oggetto con account_id (int), balance (stringa a 2 decimali,\nes. \"1000.00\"), currency (es. \"EUR\"), status (es. \"ACTIVE\"). Nessun altro\ncampo del conto (customerId, iban, createdAt) viene esposto.\n\nEffetti sul sistema: nessuno - solo GET /api/accounts/{id}.\n\nErrori espliciti (mai un valore predefinito): conto inesistente (404),\nbackend irraggiungibile, timeout, credenziali di servizio rifiutate,\nrisposta malformata o priva dei campi attesi.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "account_id"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "list_recent_movements",
+      "title": "List Recent Movements",
+      "description": "I movimenti piu' recenti di un conto, con TETTO APPLICATO DAL SERVER.\n\nQuando usarla:\n- per vedere gli ultimi movimenti di un conto quando la review tocca la\n  logica che li legge o li produce (buildStatement, transformazioni);\n- per controllare tipo/data/importo/controparte dei movimenti reali.\n\nNon usarla per:\n- avere l'estratto conto completo: il backend non ha paginazione e qui\nNON si restituisce mai la lista intera;\n- conoscere il saldo (serve get_account_balance);\n- simulare operazioni (serve simulate_transfer_what_if).\n\nParametri: account_id (int > 0); limit (int, default 10) = quanti movimenti\nvuoi. Il server accetta da 1 a 50: richieste fuori da questo intervallo\nvengono CLAMPATE (es. limit=999 -> 50), non errore e non lista completa.\nLa risposta dichiara limit_richiesto e limit_applicato.\n\nRitorna: oggetto con account_id, limit_richiesto, limit_applicato,\ntetto_massimo, count, movements (lista di oggetti con executed_at, type,\namount a 2 decimali, counterparty_account_id, description).\n\nEffetti sul sistema: nessuno - solo GET /api/movements?accountId=...\n\nErrori espliciti: conto inesistente, limit < 1, backend irraggiungibile,\nrisposta malformata. Una lista count=0 significa che il backend ha\nrisposto 200 con una lista vuota (conto senza movimenti): non e' un\nerrore mascherato.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "integer"
+          },
+          "limit": {
+            "default": 10,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "account_id"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "simulate_transfer_what_if",
+      "title": "Simulate Transfer What If",
+      "description": "Simula un bonifico e ritorna i saldi PRIMA e DOPO. NON muove nessun denaro.\n\nQuando usarla:\n- per vedere cosa succederebbe davvero a spostare una somma fra due conti;\n- in una review che tocca la logica dei movimenti, per verificare che\n  l'operazione che il codice descrive reggerebbe (o fallirebbe) sui dati reali.\n\nNon usarla per:\n- ESEGUIRE un bonifico: questo tool non ha nessun effetto sul sistema, non\n  esiste nessun percorso in questo server che modifichi un saldo;\n- conti di cui non conosci l'id (nessuna ricerca per IBAN cliente).\n\nParametri: source_account_id, target_account_id (int > 0, diversi fra loro);\namount (numero o stringa decimale, es. 150 o '150.00').\n\nRitorna: oggetto con amount, before/after (saldi delle due parti,\nstringhe a 2 decimali), would_succeed (bool), reasons (lista di motivi,\ncon i numeri reali letti dal backend), aml (flag + soglia + uri della\npolicy citata, quando amount >= 10000), system_changed: false e\nresources_cited (gli uri delle resource che il regolamento detta).\n\nEffetti sul sistema: NESSUNO. Legge due saldi con GET e calcola in\nmemoria. Prima e dopo sono una previsione, non uno stato scritto.\n\nErrori espliciti: amount <= 0 o amount > MAX_TRANSFER (tetto del server,\ndefault 50000) -> errore sugli argomenti; conto irraggiungibile o\nrisposta malformata -> errore del backend. Un'operazione che il backend\nNON accetterebbe (conto sorgente/destinazione inesistente, stesso conto,\nfondi insufficienti, amount < 0.01) ritorna would_succeed: false con il\nmotivo, non un errore: quella e' proprio la risposta che serve.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source_account_id": {
+            "type": "integer"
+          },
+          "target_account_id": {
+            "type": "integer"
+          },
+          "amount": {}
+        },
+        "required": [
+          "source_account_id",
+          "target_account_id",
+          "amount"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    }
+  ]
+}

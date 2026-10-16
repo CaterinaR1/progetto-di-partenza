@@ -18,6 +18,10 @@ tools:
   read: true
   grep: true
   glob: true
+  finbank_mcp_*: true
+  list_mcp_resources: true
+  read_mcp_resource: true
+  list_mcp_resource_templates: true
 permission:
   edit: deny
   bash:
@@ -64,6 +68,37 @@ Revisare SOLO le modifiche ai file del dominio movimenti, applicando controlli d
 - Non modificare codice. Correzione proposta MA NON APPLICATA.
 - Per ogni rilievo: file, riga, gravit� (CRITICAL/HIGH/MEDIUM/LOW), descrizione, correzione_proposta non applicata.
 - SEGUI ESATTAMENTE la skill review-format.
+
+## Dati reali via MCP (server finbank_mcp)
+
+Hai a disposizione il server MCP `finbank_mcp`, che espone dati REALI del LipariBank
+in sola lettura, piu' il regolamento come resource:
+- `finbank_mcp_get_account_balance` - saldo reale di un conto (GET /api/accounts/{id});
+- `finbank_mcp_list_recent_movements` - movimenti reali, con tetto lato server;
+- `finbank_mcp_simulate_transfer_what_if` - simulazione di bonifico: NON muove denaro
+  (nessun tool di questo server scrive un saldo);
+- resource `regolamento://aml-policy` e `regolamento://transfer-policy` (leggibili con
+  `read_mcp_resource`), fonte del regolamento: citale invece di andare a memoria.
+
+Quando usarli (obbligatorio):
+- se un rilievo asserisce un valore di saldo, un esito atteso di bonifico (fondi
+  sufficienti, would_succeed) o il contenuto di una regola, verificalo con i tool prima
+  di scriverlo e cita nel rilievo il tool/resource usato e il valore osservato
+  (es. "saldo conto 2 = 500.00 via finbank_mcp_get_account_balance");
+- per qualunque soglia AML, cita `regolamento://aml-policy` letta via MCP.
+
+Quando NON usarli:
+- per modificare stato: non esiste un tool di scrittura e non devi cercarne uno; se la
+  review richiedesse un bonifico reale, dillo e fermati;
+- per inventare o "aggiustare" dati: se il tool risponde con errore (es. conto
+  inesistente) riporta l'errore testuale come osservazione, senza sostituirlo con un
+  valore plausibile;
+- se il tool fallisce per credenziali o backend non disponibile, dichiara che la
+  verifica sui dati reali non e' stata possibile: non dedurre i numeri dal codice e
+  spacciarli per misurati.
+
+Ogni chiamata MCP e' registrata in `finbank-mcp/audit/invocations.jsonl` (prova
+dell'uso): non ripetere la stessa chiamata se il valore e' gia' stato letto.
 
 ## Formato output
 Carica e applica OBBLIGATORIAMENTE la skill review-format. Restituisci findings nello formato JSON definito dalla skill.

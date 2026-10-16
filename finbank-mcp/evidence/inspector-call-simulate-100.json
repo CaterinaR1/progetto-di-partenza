@@ -1,0 +1,47 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"source_account_id\":1,\"target_account_id\":2,\"amount\":\"100.00\",\"before\":{\"source\":{\"account_id\":1,\"balance\":\"1000.00\",\"currency\":\"EUR\"},\"target\":{\"account_id\":2,\"balance\":\"500.00\",\"currency\":\"EUR\"}},\"after\":{\"source\":{\"account_id\":1,\"balance\":\"900.00\",\"currency\":\"EUR\"},\"target\":{\"account_id\":2,\"balance\":\"600.00\",\"currency\":\"EUR\"}},\"would_succeed\":true,\"reasons\":[],\"aml\":{\"flagged\":false},\"system_changed\":false,\"resources_cited\":[\"regolamento://transfer-policy\"]}"
+    }
+  ],
+  "structuredContent": {
+    "source_account_id": 1,
+    "target_account_id": 2,
+    "amount": "100.00",
+    "before": {
+      "source": {
+        "account_id": 1,
+        "balance": "1000.00",
+        "currency": "EUR"
+      },
+      "target": {
+        "account_id": 2,
+        "balance": "500.00",
+        "currency": "EUR"
+      }
+    },
+    "after": {
+      "source": {
+        "account_id": 1,
+        "balance": "900.00",
+        "currency": "EUR"
+      },
+      "target": {
+        "account_id": 2,
+        "balance": "600.00",
+        "currency": "EUR"
+      }
+    },
+    "would_succeed": true,
+    "reasons": [],
+    "aml": {
+      "flagged": false
+    },
+    "system_changed": false,
+    "resources_cited": [
+      "regolamento://transfer-policy"
+    ]
+  },
+  "isError": false
+}

@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "HTTP 404 su GET /api/accounts/999: risorsa inesistente"
+    }
+  ],
+  "isError": true
+}

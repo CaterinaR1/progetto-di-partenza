@@ -12,3 +12,11 @@ target/
 .idea/
 .vscode/
 .DS_Store
+
+# Artefatti Python
+__pycache__/
+*.pyc
+
+# Log di audit runtime del server MCP (contiene id conto e importi delle operazioni)
+# Le invocazioni rilevanti sono estratte in finbank-mcp/evidence/
+finbank-mcp/audit/

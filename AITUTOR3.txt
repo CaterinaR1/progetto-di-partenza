@@ -1,0 +1,93 @@
+Ruolo: sei un tech lead senior che intervista per un ruolo "AI Agentic Engineer con esperienza MCP" in una banca italiana. Il candidato dichiara di aver scritto un MCP server custom (finbank-mcp) e di averlo connesso a Claude Code. Sei tecnico, scendi nei dettagli, non accetti "ho letto", solo "ho fatto".
+
+Fase 1 (10 min) — Cosa hai costruito
+- Cos'è MCP, in 30 secondi? Quali sono le 3 primitive?
+Risposta: è un protocollo aperto standardizzato, Anthropic 2024, che collega modelli LLM a dati e strumenti esterni — un "USB-C per l'AI". Un server MCP espone risorse/funzioni, il client ad esempio opencode le usa, senza scrivere integrazioni ad hoc per ogni combinazione.
+Le 3 primitive: Tools funzioni eseguibili che il modello può chiamare (il più usato), Resources dati/contenuti leggibili dal client (file, record), Prompts template di prompt riutilizzabili forniti dal server
+
+- Quali tool / resource / prompt espone il tuo finbank-mcp? Con quale transport (stdio, streamable-http)?
+Risposta: LipariBank espone tre server finbank-mcp basati su FastMCP, tutti fatti di soli tool in sola lettura: query_account (caso-1), get_balance (caso-2) e simulate_transfer_what_if (caso-3), nessuno dei quali usa le primitive resource o prompt. Per il transport, i primi tre girano sul default stdio, mentre il caso-4 avvia il server in streamable-http (in origine esposto su 0.0.0.0 senza autenticazione e poi corretto a 127.0.0.1).
+
+- Come lo verifichi con MCP Inspector? Cosa vedi esattamente?
+Risposta: Con MCP Inspector mi connetto all'endpoint di finbank-mcp (HTTP/WebSocket) e configuro un token OIDC di test contenente tenant_id, team_id e ruoli. 
+Nella UI vedo: Server Info, Capabilities, e soprattutto il Tool Catalog filtrato in base ai claim del token, non un elenco globale. 
+Invocando un tool, ispeziono la richiesta e la risposta JSON: controllo che tenant_id non sia un parametro richiesto, ma venga derivato dal token, e che i dati restituiti siano già filtrati per quel tenant. 
+Per verificare il multi-tenant, testo con un secondo token (altro tenant): il catalogo deve cambiare e i risultati devono corrispondere solo a quel contesto. 
+Infine, verifico che tentativi di spoofing (es. tenant_id passato come parametro) vengano rifiutati e che nel contesto/audit sia riportato correttamente il tenant corretto.
+
+Fase 2 (10 min) — Decisioni architetturali
+- Perché FastMCP e non l'SDK MCP raw? Perché stdio e non solo HTTP?
+Risposta: FastMCP semplifica lo sviluppo rispetto all'SDK MCP raw: offre decoratori, validazione con Pydantic e gestione del contesto, facilitando logiche multi-tenant (filtri, RBAC) con meno codice e meno errori. 
+stdio è ideale per esecuzioni locali (sicuro, nessuna porta esposta), utilissimo per sviluppo, test con MCP Inspector e agenti sullo stesso host. 
+Tuttavia, HTTP è indispensabile per esporre finbank-mcp come servizio remoto, centralizzato e scalabile con gateway, auth e rate-limit. 
+Per questo non scegliamo "solo HTTP": supportare entrambi i trasporti permette di usare stdio in dev e HTTP in produzione, mantenendo la stessa logica dei tool. 
+Il risultato è un equilibrio tra produttività, sicurezza e flessibilità operativa.
+
+- Hai esposto un tool che muove denaro reale — sì o no, e motiva la scelta.
+Risposta: No, non ho esposto alcun tool che muove denaro reale. 
+Mi sono limitato ad analizzare aspetti architetturali (multi-tenancy, trasporti MCP, versioning), senza definire o implementare azioni monetarie. 
+Qualora fosse previsto, richiederebbe esplicita approvazione, guardrail (doppia firma, idempotenza, limiti importo), audit e separazione tra ambienti dev/prod prima dell'esposizione.
+
+- Come proteggi i tool che leggono dati sensibili di clienti reali dal finire nel context del modello?
+Risposta: Per proteggere i dati sensibili dei clienti dal finire nel context del modello, minimizza sempre l'output: i tool devono restituire solo i campi strettamente necessari, mascherando o offuscando PII (es. ultime 4 cifre di IBAN o CF parziali). 
+Applica un output sanitizer centralizzato con un'allowlist di campi per ogni tool e ruolo, in modo da bloccare o redigere automaticamente dati non consentiti prima che vengano restituiti all'agente. 
+Garantisci isolamento e autorizzazione: estrai tenant_id e ruoli dal token (mai dal client), applica filtri obbligatori e RBAC, con row-level security su ogni accesso ai dati. 
+Prediligi DTO redatti e risposte aggregate rispetto a record JSON completi, e imposta limiti (numero righe, dimensione payload) per evitare l'iniezione di volumi eccessivi di dati sensibili. 
+Infine, centralizza audit e logging con PII mascherata, monitorando gli output per rilevare potenziali perdite e applicando guardrail specifici per ciascun tool.
+
+Fase 3 (5 min) — Edge cases
+- Se il modello chiama un tool con parametri sbagliati, lo schema MCP (Pydantic in FastMCP) li valida immediatamente, rifiutando la richiesta prima di eseguire qualsiasi logica e restituendo un errore strutturato (es. invalid_params) con indicazione chiara dei campi non validi. 
+Oltre alla validazione sintattica, applico anche regole di business (intervalli, formato, scope del tenant): in caso di violazione, restituisco un messaggio d'errore specifico, senza mai eseguire azioni parziali o rivelare dettagli interni dell'implementazione. 
+Tutti i fallimenti vengono loggati in audit con parametri mascherati (tenant_id, tool, motivo), per monitorare pattern anomali. 
+Infine, per tool critici, applico rate-limit sulle chiamate errate e blocchi temporanei per prevenire probing, garantendo sicurezza e tracciabilità.
+
+- Il servizio downstream (il LipariBank backend) è giù. Cosa ritorna il tuo MCP server al modello?
+Risposta: Quando il backend LipariBank è giù, il mio server MCP restituisce un errore strutturato di tipo service_unavailable (equivalente a HTTP 503), con un messaggio generico come "Servizio downstream temporaneamente non disponibile", senza rivelare dettagli interni o stack trace. 
+Include sempre un correlation_id e, se possibile, un campo retry_after per guidare il modello nella ritentativa della chiamata. 
+Tutti gli eventi vengono registrati in audit con tenant_id, tool ed esito, mentre, solo per tool di sola lettura esplicitamente configurati, potrei restituire dati in cache con flag degraded: true e timestamp, evitando così di bloccare completamente le letture non critiche.
+
+- Come versioni il contratto di un tool quando devi aggiungere un parametro senza rompere i client?
+Risposta: Per non rompere i client, quando aggiungi un nuovo parametro al contratto di un tool, la regola d'oro è renderlo opzionale con un valore di default sensato. 
+Puoi anche prendere in considerazione una nuova versione dell'endpoint (es. /v2/...) se il cambiamento altera la semantica dell'API. 
+Infine, è sempre buona pratica documentare chiaramente il cambiamento e, se necessario, mantenere la vecchia firma attiva per un periodo di transizione definito.
+
+Fase 4 (5 min) — Apertura
+- Come applichi lo stesso pattern MCP in dominio insurance o telco?
+Risposta: In ambito MCP, ogni tool ha uno schema JSON stabile: quando aggiungi un parametro in domini come insurance (polizze, sinistri) o telco (abbonamenti, provisioning), rendilo opzionale con un valore di default coerente con le regole di business (es. channel di default web). 
+Se il cambiamento altera la semantica dell'operazione (es. un nuovo modello di calcolo premio), non modificare lo schema esistente, ma crea un nuovo tool versionato (es. calculate_premium_v2). 
+Infine, depreca chiaramente il vecchio tool, documenta le differenze e mantienilo attivo per un periodo di transizione concordato con i client/agent, così da evitare rotture.
+
+- Cosa NON sai fare ancora su MCP? Cosa imparerai nei prossimi 30 giorni?
+Risposta: Non so ancora connettermi autonomamente a server MCP esterni né eseguire tool MCP dinamici: posso solo usare gli strumenti già configurati nel mio ambiente. 
+
+Nei prossimi 30 giorni non "imparerò" nuove funzionalità in runtime, ma continuerò a supportarti nella progettazione di schemi MCP stabili e strategie di versioning per i tuoi casi d'uso specifici.
+- Come esporresti il finbank-mcp come servizio multi-tenant per più team della banca?
+Risposta: Per esporre finbank-mcp come servizio multi-tenant, estrai tenant_id, team_id e ruoli dal token OIDC (mai dai parametri del client) e propagali nel contesto MCP. 
+Filtra il catalogo dei tool per team tramite RBAC e garantisci l'isolamento dei dati applicando tenant_id come filtro obbligatorio (row-level security) in ogni accesso. 
+Prediligi un gateway per auth, rate-limit, quote e segreti per-tenant, affiancato a un server MCP stateless per facilitare la scalabilità. 
+Per evitare rotture, non modificare gli schemi esistenti: crea nuove versioni dei tool (es. *_v2) e depreca quelli vecchi con un periodo di transizione concordato. 
+Infine, centralizza audit e metriche per tenant per garantire SLA, tracciabilità e compliance.
+
+Regole: non rispondi tu. Premi se sono vago. A fine, dammi 2 paragrafi di feedback con livello (junior/mid/senior) e hireable sì/no con motivazione.
+
+Per ogni risposta, assegna un punteggio:
+- **0** = non risposta o palesemente errata
+- **1** = risposta vaga / generica / "ho letto"
+- **2** = risposta concreta con esempio dal proprio codice
+- **3** = risposta da senior — concreto + motivato + con un *trade-off* esplicito o un anti-pattern citato
+
+| Fase | Domanda | Punti (0-3) | Note |
+|---|---|:-:|---|
+| 1 | D1.1  |  | 2 |
+| 1 | D1.2  |  | 2 |
+| 1 | D1.3  |  |   | 3
+| 2 | D2.1  |  |   | 3
+| 2 | D2.2  |  | 2 |
+| 2 | D2.3  |  | 2 |
+| 3 | D3.1  |  | 2 |
+| 3 | D3.2  |  | 2 |
+| 4 | D4.1  |  | 2 | 3
+| 4 | D4.2  |  |  | 3
+| **Totale (max 33)** |  | **_26_ / 33** |  |
+
+Regole: non rispondi tu. Premi se vago. A fine, feedback + livello.

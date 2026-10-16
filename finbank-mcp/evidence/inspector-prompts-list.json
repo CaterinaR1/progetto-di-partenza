@@ -1,0 +1,30 @@
+{
+  "prompts": [
+    {
+      "name": "verifica_effetto_bonifico",
+      "description": "Verifica cosa succederebbe a un bonifico, con dati reali e citazione del regolamento.\n\nCompilato con due account e un importo, prepara il flusso completo:\nregolamento -> saldi reali -> simulazione -> esito senza modifiche.",
+      "arguments": [
+        {
+          "name": "source_account_id",
+          "description": "Provide a value matching the following JSON schema: {\"type\":\"integer\"}. Encode non-string values as JSON.",
+          "required": true
+        },
+        {
+          "name": "target_account_id",
+          "description": "Provide a value matching the following JSON schema: {\"type\":\"integer\"}. Encode non-string values as JSON.",
+          "required": true
+        },
+        {
+          "name": "amount",
+          "description": "Provide a value matching the following JSON schema: {\"type\":\"string\"}. Encode non-string values as JSON.",
+          "required": true
+        }
+      ],
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    }
+  ]
+}

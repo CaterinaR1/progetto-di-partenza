@@ -1,0 +1,9 @@
+{
+  "contents": [
+    {
+      "uri": "regolamento://transfer-policy",
+      "mimeType": "text/markdown",
+      "text": "# Regolamento operativo — bonifico (transfer)\n\nFonte delle regole di backend: `src/main/java/com/lipari/bank/movement/`\n(`MovementService.java`, `dto/TransferRequest.java`). Le righe citate sono\nquelle del repository al momento della scrittura. Questo file e' la copia\nesposta dal server MCP come `regolamento://transfer-policy`.\n\n## Regole che il backend applica davvero\n\n| Regola | Sorgente |\n|---|---|\n| sorgente e destinazione devono essere conti **diversi** | `MovementService.java:27-29` |\n| entrambi i conti devono **esistere** | `MovementService.java:31-34` |\n| il saldo sorgente deve essere **>= importo** (fondi sufficienti) | `MovementService.java:36-38` |\n| importo **minimo 0.01** | `TransferRequest` `@DecimalMin(\"0.01\")` |\n| operazione **transazionale**: saldi e due movimenti insieme | `MovementService.transfer()` `@Transactional` |\n\n## Tetto del server MCP (non e' una regola bancaria)\n\n`finbank-mcp` rifiuta in simulazione importi **oltre 50.000 EUR**\n(`FINBANK_MAX_TRANSFER`): e' un tetto di questo server, dichiarato per evitare\nche un argomento fuori scala produca calcoli privi di senso. Il backend\nLipariBank non ha un massimo per operazione: non attribuire a questa cifra\nun significato regolamentare.\n\n## Cosa NON fa questo server\n\n- Non esegue bonifici: non esiste alcun percorso che modifichi un saldo.\n- Non applica le soglie AML: le trovi in `regolamento://aml-policy`.\n- Non scrive audit nel backend: tiene solo il proprio log delle invocazioni.\n"
+    }
+  ]
+}

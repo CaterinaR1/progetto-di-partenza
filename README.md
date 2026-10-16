@@ -382,4 +382,128 @@ mutilati. Essendo la **fonte unica di verita'** del formato, non l'ho modificata
 l'orchestratore e' reso robusto nel parsing (riconosce le chiavi corrotte e sia l'array
 sia gli oggetti che lo contengono), cosi' i reviewer restano liberi di seguirla.
 
+---
+
+## Server MCP `finbank-mcp` (Giorno 3 — PW G3)
+
+**FASE 3**: gli stessi dati del LipariBank, esposti come **server MCP** a un
+agente, con **3 tool, 2 resource, 1 prompt**. Regola tenuta ferma: **nessun tool
+muove denaro**. Il server espone in sola lettura saldo e movimenti e offre una
+*simulazione* di bonifico; il regolamento di banca viaggia come resource, cosi'
+l'agente lo cita invece di andare a memoria.
+
+### Cosa espone
+
+| Tipo | Nome | Cosa fa | Effetti |
+|---|---|---|---|
+| tool | `get_account_balance` | saldo reale di un conto (`GET /api/accounts/{id}`) | nessuno |
+| tool | `list_recent_movements` | movimenti recenti, con **tetto 50 applicato dal server** (clamp, non errore) | nessuno |
+| tool | `simulate_transfer_what_if` | saldi prima/dopo e `would_succeed`, **non muove denaro** | nessuno |
+| resource | `regolamento://aml-policy` | soglie AML (10k segnalazione, 5k audit, PEP 1k) | - |
+| resource | `regolamento://transfer-policy` | regole del bonifico (fondi, stesso conto, importo minimo) | - |
+| prompt | `verifica_effetto_bonifico` | argomenti: `source_account_id`, `target_account_id`, `amount` | - |
+
+Forma degli errori: **espliciti, mai un valore predefinito**. Conto inesistente ->
+`ToolError` con `HTTP 404 su GET /api/accounts/999`; `amount` fuori tetto, stesso
+conto, fondi insufficienti -> errore oppure `would_succeed:false` con il motivo;
+mai un saldo inventato.
+
+### Come si avvia
+
+```powershell
+cd finbank-mcp
+pip install -e .          # oppure: uv sync
+$env:LIPARIBANK_USERNAME = 'svc_mcp'                 # utente di servizio (vedi sotto)
+$env:LIPARIBANK_PASSWORD = '<password di servizio>'  # non nel repo
+.\run.ps1                 # oppure: ./run.sh
+```
+
+Variabili: `LIPARIBANK_BASE_URL` (default `http://localhost:8080`),
+`FINBANK_TETTO_MOVIMENTI` (50), `FINBANK_MAX_TRANSFER` (50000). Il server si
+autentica come utente di servizio dedicato `svc_mcp` (utente applicativo
+separato, senza `customer_id`, creato dal changeset `006-service-user.yaml`),
+rinnova il token a 55 minuti o su 401 e si lega **solo a 127.0.0.1**.
+
+La registrazione in OpenCode e' nel blocco `mcp` di `.opencode/opencode.json`
+(server `finbank_mcp`, `type: local`, password via `{env:LIPARIBANK_PASSWORD}`).
+Il brief citava anche un `.mcp.json` alla radice (stile Claude Code), ma
+**OpenCode non legge quel file**: l'integrazione reale e' il blocco `mcp`.
+Verificata con `opencode mcp list` -> `finbank_mcp connected`.
+
+### Le prove (trascrizioni in `finbank-mcp/evidence/`)
+
+- **MCP Inspector via CLI** (16 file JSON): `tools/list` (3 tool, schema stretto,
+  `additionalProperties:false`), `resources/list`, `resources/read` delle due
+  policy, `prompts/list` e `prompts/get`, piu' 10 `tools/call` (saldo 1 e 2; saldo
+  `999` -> errore; clamp `limit=999 -> 50`; `limit=0` -> errore; simulazione 100 ->
+  ok; fondi insufficienti / stesso conto / destinazione inesistente ->
+  `would_succeed:false`; `amount` negativo, zero, oltre tetto -> errore). Exit code
+  0 sui successi, 5 con `isError:true` sugli errori.
+- **Prompt manuale "quali tool MCP hai"**:
+  `finbank-mcp/evidence/mcp-tools-manual-transcript.md` -> l'agente lista i 3 tool.
+- **Il reviewer del Giorno 1 che usa i tool MCP durante una review**: run su un
+  difetto iniettato in `MovementService.transfer` (controllo fondi rimosso). Il
+  `movement-domain-reviewer` ha letto `regolamento://transfer-policy`, chiamato
+  `finbank_mcp_get_account_balance` (conti 1 e 2) e
+  `finbank_mcp_simulate_transfer_what_if` (2->1, 600 -> `would_succeed=False`),
+  citando i valori osservati. Findings in `review-test-giorno3-risposta.md`,
+  transcript in `review-test-giorno3-output.json`, invocazioni in
+  `review-test-giorno3-audit.jsonl`. Ogni chiamata e' anche nel log di audit del
+  server, `finbank-mcp/audit/invocations.jsonl`.
+
+### La tassonomia degli 8 asset (tutto il bootcamp)
+
+Otto asset, quattro categorie: **subagent**, **skill**, **comando**,
+**orchestratore/server**. Tutto "Lipari-grade" riutilizzabile.
+
+| Asset | Tipo | File path | Quando attivato | Tool MCP usati |
+|---|---|---|---|---|
+| Il reviewer dei movimenti (G1) | Subagent | `.opencode/agents/movement-domain-reviewer.md` | su un cambiamento che tocca i movimenti (`movement/**`) | `finbank_mcp_simulate_transfer_what_if`, `finbank_mcp_get_account_balance`; resource `regolamento://transfer-policy` |
+| Il reviewer degli importi (G1) | Subagent | `.opencode/agents/compliance-amount-reviewer.md` | su un cambiamento che tocca un importo/saldo/calcolo/AML | suggerisce la resource `regolamento://aml-policy` |
+| Il reviewer del contratto (G1) | Subagent | `.opencode/agents/api-contract-reviewer.md` | su cio' che il LipariBank espone all'esterno | nessuno |
+| La quarta lente (G2) | Subagent | `.opencode/agents/performance-reviewer.md` | la competenza aggiunta al G2 (costo di esecuzione) | nessuno |
+| La skill del formato (G1) | Skill | `.opencode/skills/review-format/SKILL.md` | su ogni review, per la forma d'uscita | nessuno |
+| `/review-pr` | Slash command | `.opencode/commands/review-pr.md` | manuale, invocata dall'utente | (orchestrator) |
+| `code_review_suite.py` | SDK orchestrator | `starter_collega_giorno_02/starter-collega/code_review_suite.py` | CLI standalone | (orchestrator) |
+| `finbank-mcp` | MCP server | `./finbank-mcp/` | registrato nel blocco `mcp` di `.opencode/opencode.json` (OpenCode; non `.mcp.json`) | (lui espone i 3 tool) |
+
+Fuori dai conteggio, ma presenti nel repo: la skill companion
+`compliance-aml-check/SKILL.md` (co-asset della categoria Skill) e
+`hello-banking.md` (agente di prova, non un reviewer).
+
+### Cosa ho cambiato di quello che ho ereditato (Gino, Giorno 3)
+
+Il primo tentativo di Gino (`starter_collega_giorno_03/starter-collega/server.py`,
+2 tool) *gira* ma non regge. Una riga di ragione per modifica:
+
+- **Rimosso il tool `execute_transfer`** (faceva `POST /api/movements/transfer`,
+  cioe' **muoveva davvero il denaro**) e sostituito con
+  `simulate_transfer_what_if`, che legge due saldi e calcola in memoria - perche' il
+  mandato e' esporre i dati, non dare a un agente il grilletto del bonifico.
+- **Aggiunta l'autenticazione** (utente di servizio `svc_mcp`, Bearer, rinnovo a
+  55 min, retry su 401) - perche' ogni endpoint non `/api/auth` vuole un token e
+  senza token ogni chiamata e' un 401: Gino leggeva l'errore *come se fosse* il saldo.
+- **Aggiunti `raise_for_status`/mappatura errori -> `ToolError`** - perche' Gino
+  faceva `response.json()` senza controllare lo stato HTTP: un 404 diventava un "dato".
+- **Ristretti i tipi e aggiunte validazioni** (`account_id` int > 0, `amount`
+  decimale e mai `float` per il denaro, `limit` clampato 1..50, `amount <=
+  MAX_TRANSFER`) - perche' `amount: float` e `id: int` senza vincoli sono il primo
+  modo per far entrare un importo sbagliato in banca.
+- **Docstring ricche ("quando usarla / quando NO")** al posto di `"Get balance."` -
+  perche' e' esattamente il motivo per cui, come racconta Gino, "dall'assistente non
+  parte da solo": un tool senza contratto leggibile non viene scelto dal modello.
+- **Esposto il regolamento come resource** (`regolamento://aml-policy`,
+  `regolamento://transfer-policy`) - risponde al dubbio di Gino ("non ho capito se
+  avrei dovuto esporli"): si', perche' cosi' l'agente cita la regola invece di
+  inventarla.
+- **Bind a 127.0.0.1** in `run.ps1`/`run.sh` al posto del default su tutte le
+  interfacce - perche' Gino l'aveva "aperto su tutte le interfacce" per provarlo: un
+  servizio con accesso ai dati di conto non deve stare in ascolto sul mondo.
+- **Risposta minima** (solo `account_id`, `balance`, `currency`, `status`) invece
+  dell'oggetto conto intero - perche' l'entita' JPA porta anche `customerId` e
+  `iban`, che non servono e non vanno esposti.
+- **Corretto il payload del bonifico** (`fromAccountId`/`toAccountId`, non
+  `sourceAccountId`/`targetAccountId`) - i nomi di Gino non combaciano col DTO: la
+  chiamata sarebbe fallita comunque.
+
 

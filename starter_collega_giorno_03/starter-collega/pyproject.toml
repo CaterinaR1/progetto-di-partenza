@@ -1,0 +1,12 @@
+[project]
+name = "finbank-mcp"
+version = "0.1.0"
+description = "Server MCP sul FinBank — prima versione"
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp>=2.0.0",
+    "httpx>=0.27.0",
+]
+
+[tool.uv]
+dev-dependencies = []

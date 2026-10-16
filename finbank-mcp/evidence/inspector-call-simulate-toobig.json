@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "amount: 60000.00 supera il tetto del server MCP (50000.00): simulazione rifiutata, nessun dato inventato"
+    }
+  ],
+  "isError": true
+}

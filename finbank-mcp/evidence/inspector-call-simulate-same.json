@@ -1,0 +1,49 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"source_account_id\":1,\"target_account_id\":1,\"amount\":\"50.00\",\"before\":{\"source\":{\"account_id\":1,\"balance\":\"1000.00\",\"currency\":\"EUR\"},\"target\":{\"account_id\":1,\"balance\":\"1000.00\",\"currency\":\"EUR\"}},\"after\":{\"source\":{\"account_id\":1,\"balance\":\"1000.00\",\"currency\":\"EUR\"},\"target\":{\"account_id\":1,\"balance\":\"1000.00\",\"currency\":\"EUR\"}},\"would_succeed\":false,\"reasons\":[\"sorgente e destinazione coincidono: MovementService.transfer() rifiuta l'operazione (MovementService.java:27)\"],\"aml\":{\"flagged\":false},\"system_changed\":false,\"resources_cited\":[\"regolamento://transfer-policy\"]}"
+    }
+  ],
+  "structuredContent": {
+    "source_account_id": 1,
+    "target_account_id": 1,
+    "amount": "50.00",
+    "before": {
+      "source": {
+        "account_id": 1,
+        "balance": "1000.00",
+        "currency": "EUR"
+      },
+      "target": {
+        "account_id": 1,
+        "balance": "1000.00",
+        "currency": "EUR"
+      }
+    },
+    "after": {
+      "source": {
+        "account_id": 1,
+        "balance": "1000.00",
+        "currency": "EUR"
+      },
+      "target": {
+        "account_id": 1,
+        "balance": "1000.00",
+        "currency": "EUR"
+      }
+    },
+    "would_succeed": false,
+    "reasons": [
+      "sorgente e destinazione coincidono: MovementService.transfer() rifiuta l'operazione (MovementService.java:27)"
+    ],
+    "aml": {
+      "flagged": false
+    },
+    "system_changed": false,
+    "resources_cited": [
+      "regolamento://transfer-policy"
+    ]
+  },
+  "isError": false
+}

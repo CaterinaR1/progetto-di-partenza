@@ -1,0 +1,15 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"account_id\":2,\"balance\":\"500.00\",\"currency\":\"EUR\",\"status\":\"ACTIVE\"}"
+    }
+  ],
+  "structuredContent": {
+    "account_id": 2,
+    "balance": "500.00",
+    "currency": "EUR",
+    "status": "ACTIVE"
+  },
+  "isError": false
+}

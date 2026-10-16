@@ -1,0 +1,12 @@
+{
+  "description": "Verifica cosa succederebbe a un bonifico, con dati reali e citazione del regolamento.\n\nCompilato con due account e un importo, prepara il flusso completo:\nregolamento -> saldi reali -> simulazione -> esito senza modifiche.",
+  "messages": [
+    {
+      "role": "user",
+      "content": {
+        "type": "text",
+        "text": "Verifica l'effetto reale di un bonifico di 100 dal conto 1\nal conto 2, senza modificare nulla al sistema.\n\nSegui ESATTAMENTE questa sequenza:\n\n1. Leggi il regolamento PRIMA di calcolare: usa list_mcp_resources e\n   read_mcp_resource sulle resource \"regolamento://transfer-policy\" e\n   \"regolamento://aml-policy\". Le soglie e le regole vanno CITATE dalla\n   resource letta, mai ricordate a memoria.\n\n2. Leggi i saldi reali con get_account_balance sui due conti. Se un tool\n   restituisce un errore, riporta l'errore testuale: non dedurre nessun\n   numero al suo posto.\n\n3. Simula con simulate_transfer_what_if (source=1,\n   target=2, amount=100).\n\n4. Riporta: tabella saldi PRIMA / DOPO, would_succeed, e se e' false il\n   motivo con i numeri reali. Chiudi con la frase esplicita:\n   \"Nessuna modifica e' stata applicata al sistema: la simulazione non\n   muove denaro\" (il campo system_changed: false lo conferma).\n\n5. Se amount >= 10000 o l'esito e' negativo, cita la regola dalla resource\n   letta (uri + frase chiave), non dalla tua memoria.\n\nNON usare questo flusso per eseguire un bonifico: non esiste nessun tool\nche muova denaro in questo server."
+      }
+    }
+  ]
+}

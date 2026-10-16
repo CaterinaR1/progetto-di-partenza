@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: 006-service-user
+      author: lipari-bootcamp
+      comment: >-
+        Utente di servizio per il server MCP finbank-mcp: le letture fatte dal
+        MCP sono distinguibili da alice/bob nell'audit del backend. Nessun
+        customer associato (customer_id NULL e' ammesso dallo schema 004).
+        Password "svc-mcp-2026", hash BCrypt ($2a$10) generato per il bootcamp.
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO app_user (username, password_hash, customer_id)
+              VALUES ('svc_mcp', '$2a$10$tSB.48u90r1.e/ZplbEaluyjMmFusw/OuDR4VyPcqpZSaQ/MurSva', NULL);

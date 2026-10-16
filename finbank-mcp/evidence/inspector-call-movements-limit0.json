@@ -1,0 +1,9 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "limit: deve essere >= 1 (richiesto 0). Il server non restituisce liste vuote per argomenti fuori intervallo: correggi il parametro."
+    }
+  ],
+  "isError": true
+}

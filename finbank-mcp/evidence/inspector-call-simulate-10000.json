@@ -1,0 +1,53 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"source_account_id\":1,\"target_account_id\":2,\"amount\":\"10000.00\",\"before\":{\"source\":{\"account_id\":1,\"balance\":\"1000.00\",\"currency\":\"EUR\"},\"target\":{\"account_id\":2,\"balance\":\"500.00\",\"currency\":\"EUR\"}},\"after\":{\"source\":{\"account_id\":1,\"balance\":\"1000.00\",\"currency\":\"EUR\"},\"target\":{\"account_id\":2,\"balance\":\"500.00\",\"currency\":\"EUR\"}},\"would_succeed\":false,\"reasons\":[\"fondi insufficienti: saldo sorgente 1000.00 < importo 10000.00 (MovementService.java:36-38)\"],\"aml\":{\"flagged\":true,\"soglia\":\"10000.00\",\"note\":\"importo oltre soglia AML: questa simulazione NON segnala nulla nessun campo viene scritto - la segnalazione spetta al backend/al processo di compliance\",\"policy\":\"regolamento://aml-policy\"},\"system_changed\":false,\"resources_cited\":[\"regolamento://transfer-policy\",\"regolamento://aml-policy\"]}"
+    }
+  ],
+  "structuredContent": {
+    "source_account_id": 1,
+    "target_account_id": 2,
+    "amount": "10000.00",
+    "before": {
+      "source": {
+        "account_id": 1,
+        "balance": "1000.00",
+        "currency": "EUR"
+      },
+      "target": {
+        "account_id": 2,
+        "balance": "500.00",
+        "currency": "EUR"
+      }
+    },
+    "after": {
+      "source": {
+        "account_id": 1,
+        "balance": "1000.00",
+        "currency": "EUR"
+      },
+      "target": {
+        "account_id": 2,
+        "balance": "500.00",
+        "currency": "EUR"
+      }
+    },
+    "would_succeed": false,
+    "reasons": [
+      "fondi insufficienti: saldo sorgente 1000.00 < importo 10000.00 (MovementService.java:36-38)"
+    ],
+    "aml": {
+      "flagged": true,
+      "soglia": "10000.00",
+      "note": "importo oltre soglia AML: questa simulazione NON segnala nulla nessun campo viene scritto - la segnalazione spetta al backend/al processo di compliance",
+      "policy": "regolamento://aml-policy"
+    },
+    "system_changed": false,
+    "resources_cited": [
+      "regolamento://transfer-policy",
+      "regolamento://aml-policy"
+    ]
+  },
+  "isError": false
+}
